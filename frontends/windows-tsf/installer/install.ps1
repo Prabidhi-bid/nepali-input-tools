@@ -96,9 +96,13 @@ if (-not (Test-Admin)) {
     if ($SkipX86) { $argv += '-SkipX86' }
     try { $proc = Start-Process powershell.exe -ArgumentList $argv -Verb RunAs -Wait -PassThru }
     catch { Write-Host 'Elevation was cancelled or denied.' -ForegroundColor Red; exit 1 }
-    if ($proc.ExitCode) {
-        Write-Host "The elevated step failed ($($proc.ExitCode)); not touching your language list." -ForegroundColor Red
-        exit $proc.ExitCode
+    # Judge by what is actually registered, not by the exit code. The elevated
+    # window pauses on failure, and closing it rather than pressing Enter exits
+    # with 0xC000013A - which is not a failed install, and refusing to add the
+    # keyboard because of it would leave the input method half-installed.
+    if (-not (Test-Path "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$Clsid")) {
+        Write-Host "The elevated step did not register the input method (exit $($proc.ExitCode))." -ForegroundColor Red
+        exit 1
     }
     Add-NeKeyboard | Out-Null
     foreach ($p in $HostProcs) { Stop-Process -Name $p -Force -ErrorAction SilentlyContinue }
@@ -377,5 +381,8 @@ catch {
     $code = 1
 }
 
-if ($Elevated) { Write-Host ''; Read-Host 'Press Enter to close' }
+# Pause only when something went wrong and there is a message worth reading;
+# on success the window closes itself, so nobody is tempted to dismiss it in a
+# way that looks like a crash.
+if ($Elevated -and $code -ne 0) { Write-Host ''; Read-Host 'Press Enter to close' }
 exit $code
