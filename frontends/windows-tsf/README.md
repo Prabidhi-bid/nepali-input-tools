@@ -20,18 +20,21 @@ Output: `target\release\xlit_tsf.dll` (x64).
 
 ## Install
 
-[`installer/install.ps1`](installer/install.ps1) — self-elevating, no toolchain.
+- **`Setup.exe`** — `powershell -File installer\build-setup.ps1` (needs
+  `winget install JRSoftware.InnoSetup`) → a distributable
+  `installer\Input-by-Prabidhi.bid-<ver>-setup.exe`.
+- **`installer\install.ps1`** — self-elevating, no toolchain:
 
 ```
 powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\install.ps1
 ```
 
-Builds x64 + x86, deregisters any prior copy, registers both DLLs, **adds the
-Nepali keyboard to your language list**, and recycles the input hosts — so
-**Input by Prabidhi.bid** should already be in the taskbar / Win+Space switcher
-(sign out / in if not). `-SkipX86` for a faster x64-only run;
-[`uninstall.ps1`](installer/uninstall.ps1) reverses it. See
-[`installer/README.md`](installer/README.md).
+Either builds x64 + x86, deregisters any prior copy, registers both DLLs,
+**adds the Nepali keyboard to your language list**, and recycles the input hosts
+— so **Input by Prabidhi.bid** should already be in the taskbar / Win+Space
+switcher (sign out / in if not). `-SkipX86` for a faster x64-only run;
+[`uninstall.ps1`](installer/uninstall.ps1) / the Setup.exe uninstaller reverse
+it. See [`installer/README.md`](installer/README.md).
 
 **Manual (dev, register only):** PowerShell / cmd **as Administrator**:
 

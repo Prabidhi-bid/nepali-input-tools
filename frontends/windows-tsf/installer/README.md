@@ -1,11 +1,38 @@
 # Installer — `Input by Prabidhi.bid`
 
-`install.ps1` / `uninstall.ps1` — plain PowerShell, no toolchain. Both
-self-elevate.
+Two ways in:
+
+- **`xlit-tsf.iss` + `build-setup.ps1`** → a distributable **`Setup.exe`**
+  (Inno Setup). Give this to end users.
+- **`install.ps1` / `uninstall.ps1`** → plain PowerShell, no toolchain, for dev
+  boxes. Both self-elevate.
 
 ```
 powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\install.ps1
 ```
+
+Both do the same work (build x64 + x86, deregister → register each with the
+matching `regsvr32`, add the keyboard via `Set-WinUserLanguageList`); the
+`.iss` also gets an Apps & features entry and a wizard from Inno.
+
+## Build `Setup.exe`
+
+Prerequisite (one time): `winget install JRSoftware.InnoSetup`
+
+```
+powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\build-setup.ps1
+```
+
+→ `installer\Input-by-Prabidhi.bid-<ver>-setup.exe`, both DLLs embedded.
+Options: `-Version 0.2.0`, `-Configuration debug`, `-SkipX86`,
+`-Password <pw>` (encrypt payload), `-Iscc "<path>\ISCC.exe"` (if
+auto-detection misses it — it also checks Inno's registry install location and
+the usual folders). `xlit-tsf.iss` registers per bitness (`System32` regsvr32
+for the native DLL, `SysWOW64` for the x86 one), writes the keyboard from a
+`runascurrentuser` step, and on uninstall runs the same reversal as
+`uninstall.ps1` (language list, `regsvr32 /u`, an HKLM key force-delete
+fallback, an HKCU CTF sweep) plus Inno's own file/ARP removal. Keep `AppId`
+stable across releases.
 
 ## What `install.ps1` does (elevated)
 
@@ -106,5 +133,6 @@ more in compatibility and support than they cost an analyst.
 - **No native ARM64 payload.**
 - `COMLESS` category is deliberately not registered (classic COM server only) —
   it was hiding the TIP from the modern switcher.
-- Not a shareable double-click installer. A signed MSI (deferred no-impersonate
-  custom actions + Active Setup) is the eventual M6.5 target.
+- `Setup.exe` is unsigned — SmartScreen will warn. Code-sign it (and the DLL)
+  before wider distribution; a proper signed MSI with Active Setup for other
+  users is the eventual M6.5 target.

@@ -145,13 +145,15 @@ the engine to `commit` for learning.
      with the engine's top candidate on a break key.
    - **M6.3**: candidate window (layered popup) + number-key select + `xlit-learn`.
    - **M6.4**: language-bar icon, Chrome/Electron/UWP fixes, toggle key.
-   - **M6.5** *(initial)*: `installer/install.ps1` + `uninstall.ps1` (plain
-     PowerShell, no toolchain). Builds **x64 + x86** (`--target x86_64-` /
-     `i686-pc-windows-msvc`), lays them out as `{app}\xlit_tsf.dll` +
-     `{app}\x86\xlit_tsf.dll`, deregister→register each with the
-     matching-bitness `regsvr32`, and adds the keyboard with
-     `Set-WinUserLanguageList`. Release DLL is stripped, trace behind a cargo
-     feature. TODO: code signing, a signed/shareable installer, native ARM64.
+   - **M6.5** *(initial)*: `installer/` — `xlit-tsf.iss` + `build-setup.ps1`
+     produce a distributable Inno Setup `Setup.exe`; `install.ps1` /
+     `uninstall.ps1` are the toolchain-free path. Both build **x64 + x86**
+     (`--target x86_64-` / `i686-pc-windows-msvc`), lay them out as
+     `{app}\xlit_tsf.dll` + `{app}\x86\xlit_tsf.dll`, deregister→register each
+     with the matching-bitness `regsvr32`, and add the keyboard with
+     `Set-WinUserLanguageList`; uninstall fully reverses (incl. HKLM key
+     force-delete + HKCU CTF sweep). Release DLL is stripped, trace behind a
+     cargo feature. TODO: code signing, a signed MSI, native ARM64.
 7. **M7 — ONNX OOV fallback**: `training/` pipeline (Dakshina `ne` +
    Aksharantar `nep` → small char transformer → int8 ONNX), lazy-loaded `Ranker`.
 8. **M8 — packaging**: signed installers, per-distro packages, language packs.
