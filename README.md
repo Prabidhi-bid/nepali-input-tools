@@ -29,7 +29,8 @@ single daemon (frontends are ~2 MB clients). The neural model is off by default.
 - [ ] Daemon + IPC (named pipe / Unix socket)
 - [ ] Linux IBus frontend
 - [ ] Linux Fcitx5 frontend
-- [ ] Windows TSF frontend
+- [~] Windows TSF frontend (`xlit-tsf`) — M6.1 registrable DLL done; key handling next
+      (see [frontends/windows-tsf/README.md](frontends/windows-tsf/README.md))
 - [ ] (later) ONNX OOV fallback + training pipeline in `training/`
 
 See [docs/architecture.md](docs/architecture.md) for the full plan and milestones.

@@ -1,0 +1,31 @@
+[package]
+name = "xlit-tsf"
+version = "0.1.0"
+description = "Windows TSF text input processor for the xlit transliteration engine."
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "xlit_tsf"
+crate-type = ["cdylib"]
+
+[dependencies]
+xlit-core = { path = "../../crates/xlit-core" }
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.56"
+windows-core = "0.62"
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_LibraryLoader",
+    "Win32_System_SystemServices",
+    "Win32_UI_TextServices",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+]

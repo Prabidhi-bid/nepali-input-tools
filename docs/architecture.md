@@ -120,7 +120,15 @@ the engine to `commit` for learning.
 3. **M3 — daemon**: `xlit-daemon` + IPC, CLI switches to client mode.
 4. **M4 — Linux IBus**: end-to-end typing in real apps on Linux.
 5. **M5 — Fcitx5**.
-6. **M6 — Windows TSF**.
+6. **M6 — Windows TSF** (`frontends/windows-tsf`, `xlit-tsf.dll`), staged:
+   - **M6.1** *(done)*: registrable COM DLL — `regsvr32` writes the CLSID keys,
+     TSF profile (`xlit Nepali (phonetic)`, LANGID `0x0461`), and keyboard-TIP
+     category. Activatable; no key handling yet.
+   - **M6.2**: `ITfKeyEventSink` + inline TSF composition — buffer ASCII, replace
+     with the engine's top candidate on a break key.
+   - **M6.3**: candidate window (layered popup) + number-key select + `xlit-learn`.
+   - **M6.4**: language-bar icon, x86 build, Chrome/Electron/UWP fixes, toggle key.
+   - **M6.5**: MSI installer that performs the COM registration.
 7. **M7 — ONNX OOV fallback**: `training/` pipeline (Dakshina `ne` +
    Aksharantar `nep` → small char transformer → int8 ONNX), lazy-loaded `Ranker`.
 8. **M8 — packaging**: signed installers, per-distro packages, language packs.
