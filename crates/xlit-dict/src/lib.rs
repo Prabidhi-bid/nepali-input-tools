@@ -11,12 +11,17 @@
 //! The FST is memory-mapped (`DictRanker::open`) so a large dictionary costs
 //! almost no resident RAM; the compiled-in seed list (`DictRanker::builtin`)
 //! is built in memory for out-of-the-box use and tests.
+//!
+//! The fuzzy pass is a bounded char-level edit-distance scan over the keys, not
+//! `fst`'s `Levenshtein` automaton — that one is byte-oriented and silently
+//! matches nothing for multi-byte UTF-8 (Devanagari). It's O(dict) per miss;
+//! a BK-tree / SymSpell index is the upgrade if profiling ever asks for it.
 
 use std::collections::BTreeMap;
 use std::io;
 use std::path::Path;
 
-use fst::automaton::{Levenshtein, Str};
+use fst::automaton::Str;
 use fst::{Automaton, IntoStreamer, Map, MapBuilder, Streamer};
 use memmap2::Mmap;
 
@@ -130,7 +135,33 @@ fn freq_bonus(freq: u64) -> i32 {
     (((freq.max(1) as f64).ln() * 5.0) as i32).clamp(0, 80)
 }
 
-impl<D: AsRef<[u8]>> Ranker for DictRanker<D> {
+/// Char-level Levenshtein with an early cutoff. Returns the distance if it is
+/// `<= max`, otherwise `None`. Two rolling rows; bails once a whole row exceeds
+/// `max`.
+fn bounded_levenshtein(a: &[char], b: &[char], max: usize) -> Option<usize> {
+    let (n, m) = (a.len(), b.len());
+    if n.abs_diff(m) > max {
+        return None;
+    }
+    let mut prev: Vec<usize> = (0..=m).collect();
+    let mut curr: Vec<usize> = vec![0; m + 1];
+    for i in 1..=n {
+        curr[0] = i;
+        let mut row_min = curr[0];
+        for j in 1..=m {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
+            row_min = row_min.min(curr[j]);
+        }
+        if row_min > max {
+            return None;
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    (prev[m] <= max).then_some(prev[m])
+}
+
+impl<D: AsRef<[u8]> + Send + Sync> Ranker for DictRanker<D> {
     fn rank(&self, _input: &str, mut cands: Vec<Candidate>) -> Vec<Candidate> {
         let word = match cands.iter().find(|c| c.source == Source::Rule) {
             Some(c) => c.text.clone(),
@@ -151,9 +182,27 @@ impl<D: AsRef<[u8]>> Ranker for DictRanker<D> {
             );
         }
 
-        // 2. fuzzy match (typo correction)
-        if let Ok(lev) = Levenshtein::new(word.as_str(), self.opts.max_edit_distance) {
-            for (s, v) in self.collect(&lev, &word, self.opts.max_fuzzy) {
+        // 2. fuzzy match (typo correction) — bounded edit-distance scan.
+        {
+            let q: Vec<char> = word.chars().collect();
+            let maxd = self.opts.max_edit_distance as usize;
+            let mut hits: Vec<(String, u64)> = Vec::new();
+            let mut stream = self.map.stream();
+            while let Some((k, v)) = stream.next() {
+                let Ok(s) = std::str::from_utf8(k) else { continue };
+                if s == word {
+                    continue;
+                }
+                let sc: Vec<char> = s.chars().collect();
+                if sc.len().abs_diff(q.len()) > maxd {
+                    continue;
+                }
+                if bounded_levenshtein(&q, &sc, maxd).is_some() {
+                    hits.push((s.to_string(), v));
+                }
+            }
+            hits.sort_by(|a, b| b.1.cmp(&a.1));
+            for (s, v) in hits.into_iter().take(self.opts.max_fuzzy) {
                 // same-length hits are substitutions (vowel length, nasal,
                 // sibilant) — the common typo class; nudge them above
                 // insertions/deletions of similar frequency.

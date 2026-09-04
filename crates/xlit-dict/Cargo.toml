@@ -11,5 +11,5 @@ fst = "0.4"
 memmap2 = "0.9"
 
 [[bin]]
-name = "build"
-path = "src/bin/build.rs"
+name = "mkdict"
+path = "src/bin/mkdict.rs"

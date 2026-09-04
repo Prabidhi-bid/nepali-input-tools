@@ -1,6 +1,6 @@
 //! Build a `.fst` dictionary from a `word<TAB>freq` TSV.
 //!
-//!   cargo run -p xlit-dict --bin build -- words.tsv words.fst
+//!   cargo run -p xlit-dict --bin mkdict -- words.tsv words.fst
 //!
 //! Lines starting with `#` and blank lines are ignored. Duplicate words keep
 //! the highest frequency. Keys are written in sorted order as `fst` requires.
@@ -13,7 +13,7 @@ fn main() -> std::io::Result<()> {
     let (input, output) = match (args.next(), args.next()) {
         (Some(i), Some(o)) => (i, o),
         _ => {
-            eprintln!("usage: build <input.tsv> <output.fst>");
+            eprintln!("usage: mkdict <input.tsv> <output.fst>");
             std::process::exit(2);
         }
     };
