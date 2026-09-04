@@ -24,11 +24,10 @@ use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, CreateFontW, CreateSolidBrush, DeleteObject, EndPaint, FillRect, GetDC,
-    GetSysColor, GetTextExtentPoint32W, InvalidateRect, MonitorFromPoint, ReleaseDC, SelectObject,
-    SetBkMode, SetTextColor, TextOutW, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, COLOR_HIGHLIGHT,
-    COLOR_HIGHLIGHTTEXT, COLOR_WINDOW, COLOR_WINDOWTEXT, DEFAULT_CHARSET, DEFAULT_PITCH,
+    GetTextExtentPoint32W, InvalidateRect, MonitorFromPoint, ReleaseDC, SelectObject, SetBkMode,
+    SetTextColor, TextOutW, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH,
     FF_DONTCARE, FW_NORMAL, HDC, HFONT, HGDIOBJ, MONITOR_DEFAULTTONEAREST, OUT_DEFAULT_PRECIS,
-    PAINTSTRUCT, SYS_COLOR_INDEX, TRANSPARENT,
+    PAINTSTRUCT, TRANSPARENT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, LoadCursorW, RegisterClassW, SetWindowPos,
@@ -47,6 +46,18 @@ const PAD_Y: i32 = 6;
 const ROW_GAP: i32 = 6;
 /// Gap between the composition and the top of the popup.
 const ANCHOR_GAP: i32 = 4;
+
+// Fixed palette rather than system colours: the popup sits over somebody
+// else's document, and a candidate list has to stay readable whatever theme
+// that application is painted in. COLORREF is 0x00BBGGRR, not RGB.
+/// White page.
+const BG: COLORREF = COLORREF(0x00_FF_FF_FF);
+/// Blue text.
+const FG: COLORREF = COLORREF(0x00_A0_38_15);
+/// Pale blue band behind the highlighted row.
+const SEL_BG: COLORREF = COLORREF(0x00_F5_E4_D8);
+/// Border, so the popup reads as a surface on a white document.
+const BORDER: COLORREF = COLORREF(0x00_D8_C8_BC);
 
 /// What the window procedure needs in order to paint. Owned by the window.
 struct Paint {
@@ -301,9 +312,20 @@ fn paint(hwnd: HWND) {
 
 fn draw(hdc: HDC, rc: &RECT, p: &Paint) {
     unsafe {
-        let bg = CreateSolidBrush(sys(COLOR_WINDOW));
+        let bg = CreateSolidBrush(BG);
         FillRect(hdc, rc, bg);
         _ = DeleteObject(HGDIOBJ(bg.0));
+
+        for edge in [
+            RECT { left: rc.left, top: rc.top, right: rc.right, bottom: rc.top + 1 },
+            RECT { left: rc.left, top: rc.bottom - 1, right: rc.right, bottom: rc.bottom },
+            RECT { left: rc.left, top: rc.top, right: rc.left + 1, bottom: rc.bottom },
+            RECT { left: rc.right - 1, top: rc.top, right: rc.right, bottom: rc.bottom },
+        ] {
+            let b = CreateSolidBrush(BORDER);
+            FillRect(hdc, &edge, b);
+            _ = DeleteObject(HGDIOBJ(b.0));
+        }
 
         let old = SelectObject(hdc, HGDIOBJ(p.font.0));
         SetBkMode(hdc, TRANSPARENT);
@@ -316,7 +338,7 @@ fn draw(hdc: HDC, rc: &RECT, p: &Paint) {
             let row_h = sz.cy + ROW_GAP;
 
             if i == p.sel {
-                let hl = CreateSolidBrush(sys(COLOR_HIGHLIGHT));
+                let hl = CreateSolidBrush(SEL_BG);
                 let band = RECT {
                     left: rc.left,
                     top: y - ROW_GAP / 2,
@@ -325,19 +347,13 @@ fn draw(hdc: HDC, rc: &RECT, p: &Paint) {
                 };
                 FillRect(hdc, &band, hl);
                 _ = DeleteObject(HGDIOBJ(hl.0));
-                SetTextColor(hdc, sys(COLOR_HIGHLIGHTTEXT));
-            } else {
-                SetTextColor(hdc, sys(COLOR_WINDOWTEXT));
             }
+            SetTextColor(hdc, FG);
             _ = TextOutW(hdc, PAD_X, y, &text);
             y += row_h;
         }
         SelectObject(hdc, old);
     }
-}
-
-fn sys(index: SYS_COLOR_INDEX) -> COLORREF {
-    COLORREF(unsafe { GetSysColor(index) })
 }
 
 /// Work area (screen minus taskbar) of the monitor holding a point.

@@ -52,7 +52,8 @@ $Publisher   = 'Prabidhi.bid'
 $InstallDir  = Join-Path $env:ProgramFiles 'Prabidhi.bid Input'
 $UninstallRK = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PrabidhibidInput'
 $HostProcs   = @('ctfmon', 'TextInputHost')
-$Tip         = '0461:{438E43E4-3800-4AB1-82A6-A2E831ABF107}{4BE59555-69DD-48CA-8BC8-AB450205A567}'
+$Clsid       = '{438E43E4-3800-4AB1-82A6-A2E831ABF107}'
+$Tip         = "0461:$Clsid{4BE59555-69DD-48CA-8BC8-AB450205A567}"
 
 function Test-Admin {
     ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
@@ -168,26 +169,49 @@ try {
     Start-Sleep -Milliseconds 400
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
+    # These run as four separate passes over the architectures, and the order
+    # matters. DllUnregisterServer removes the *TSF profile*, which is
+    # machine-wide and shared by both bitnesses - it is not per-architecture
+    # like the CLSID keys. Deregistering and registering one architecture at a
+    # time therefore has x86's deregister tear out the profile that x64 just
+    # registered, and if x86 then fails to register you are left with no
+    # profile at all: the input method vanishes from the language switcher even
+    # though its files and COM keys look fine.
+    #
+    # So: resolve everything, deregister everything, copy everything, and only
+    # then register.
     $installed = @()
     foreach ($t in $targets) {
         try {
-            $src = Resolve-Source $t
+            $t | Add-Member -NotePropertyName Src -NotePropertyValue (Resolve-Source $t) -Force
+            $installed += $t
         } catch {
             if ($t.Fatal) { throw }
             Write-Warning "$($t.Name): $_  -- skipping (needs the i686 MSVC toolchain; 32-bit apps won't get the TIP)"
-            continue
         }
+    }
+    if (-not $installed) { throw 'nothing installed' }
+
+    foreach ($t in $installed) {
+        & $t.Regsvr /s /u $t.Dest                # best-effort, silent
+    }
+    foreach ($t in $installed) {
         Write-Host "==> installing $($t.Name) -> $($t.Dest)" -ForegroundColor Cyan
         New-Item -ItemType Directory -Force -Path (Split-Path $t.Dest) | Out-Null
-        & $t.Regsvr /s /u $t.Dest                # deregister a previous copy (silent, best-effort)
         Clear-LockedFile $t.Dest
-        Copy-Item $src $t.Dest -Force
+        Copy-Item $t.Src $t.Dest -Force
+    }
+    foreach ($t in $installed) {
         Write-Host "==> $(Split-Path $t.Regsvr -Leaf) /s ($($t.Name))" -ForegroundColor Cyan
         & $t.Regsvr /s $t.Dest
         if ($LASTEXITCODE) { throw "regsvr32 ($($t.Name)) failed ($LASTEXITCODE)" }
-        $installed += $t
     }
-    if (-not $installed) { throw 'nothing installed' }
+
+    # The profile is what the language switcher reads through; if it is missing
+    # here, adding the keyboard below would silently do nothing.
+    if (-not (Test-Path "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$Clsid")) {
+        throw "registration reported success but the TSF profile is missing - the input method would not appear"
+    }
 
     # The word editor. A separate executable rather than a dialog inside the
     # DLL, which is loaded into every application that takes typing; the
@@ -242,6 +266,17 @@ try {
         $ne = $list | Where-Object { $_.LanguageTag -eq 'ne-NP' }
         if ($ne -and ($ne.InputMethodTips -notcontains $Tip)) { $ne.InputMethodTips.Add($Tip) }
         Set-WinUserLanguageList $list -Force
+
+        # Windows drops a TIP it cannot resolve to a registered profile, and
+        # does so without complaining - the call "succeeds" and the keyboard is
+        # simply not there. Read it back rather than trust it.
+        $after = Get-WinUserLanguageList | Where-Object { $_.LanguageTag -eq 'ne-NP' }
+        if ($after -and ($after.InputMethodTips -contains $Tip)) {
+            Write-Host '    keyboard added and verified' -ForegroundColor DarkGray
+        }
+        else {
+            Write-Warning "Windows did not keep the keyboard in your language list. Add 'Input by Prabidhi.bid' from Settings > Time & Language > Language & region > Nepali > Language options > Keyboards."
+        }
     } catch {
         Write-Warning "couldn't auto-add the keyboard ($_). Add it from Settings > Language > Nepali > Keyboards."
     }

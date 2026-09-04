@@ -107,6 +107,15 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
             crate::debug(&format!("toggle key unavailable: {e}"));
         }
 
+        // Put the floating bar up now rather than waiting for the first focus
+        // change: activation is the moment the user switched *to* this keyboard,
+        // and that is when they expect to see it. OnSetFocus keeps it to the
+        // focused application from here on.
+        if let Ok(mut s) = sess.try_borrow_mut() {
+            let weak = std::rc::Rc::downgrade(&sess);
+            s.bar.show(&weak);
+        };
+
         *self.inner.borrow_mut() = Some(Active { tid, keystroke, sess, toggle });
         crate::debug(&format!("Activate (client id {tid})"));
         Ok(())
@@ -129,8 +138,11 @@ impl TextService_Impl {
             let _ = a.keystroke.UnpreserveKey(&GUID_TOGGLE, &a.toggle);
             let _ = a.keystroke.UnadviseKeyEventSink(a.tid);
         }
+        // Deactivate means the user switched away from this keyboard, so the
+        // bar goes with it.
         if let Ok(mut s) = a.sess.try_borrow_mut() {
             s.window.hide();
+            s.bar.hide();
         };
     }
 }
