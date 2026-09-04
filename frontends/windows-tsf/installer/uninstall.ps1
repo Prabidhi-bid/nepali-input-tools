@@ -59,7 +59,7 @@ try {
             Remove-Item $InstallDir -Recurse -Force -ErrorAction Stop
             Write-Host "Removed $InstallDir" -ForegroundColor DarkGray
         } catch {
-            # DLL still mapped — rename aside, then let a detached cmd sweep the
+            # DLL still mapped - rename aside, then let a detached cmd sweep the
             # folder once this process (and its lock on uninstall.ps1) is gone.
             Get-ChildItem $InstallDir -Filter *.dll -ErrorAction SilentlyContinue | ForEach-Object {
                 try { Rename-Item $_.FullName "$($_.FullName).$(Get-Date -Format yyyyMMddHHmmss).old" -Force } catch {}

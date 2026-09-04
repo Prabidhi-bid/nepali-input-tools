@@ -15,11 +15,11 @@
     Version stamped into the installer (default 0.1.0).
 
 .PARAMETER Configuration
-    release (default) or debug — which target\<cfg>\xlit_tsf.dll to embed.
+    release (default) or debug - which target\<cfg>\xlit_tsf.dll to embed.
 
 .PARAMETER Password
     If given, encrypt the installer's embedded payload (Inno `Encryption`).
-    Speed-bump only — see installer/README.md.
+    Speed-bump only - see installer/README.md.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\build-setup.ps1
@@ -39,7 +39,7 @@ $dll      = Join-Path $repoRoot "target\$Configuration\xlit_tsf.dll"
 # If the service is registered, Windows maps xlit_tsf.dll into ctfmon / the
 # Claude app / consoles and cargo can't overwrite it ("Access is denied").
 # Renaming a mapped DLL aside is allowed; cargo then writes a fresh one. The
-# stale copy unloads on the next sign-out. (No elevation needed — target\ is
+# stale copy unloads on the next sign-out. (No elevation needed - target\ is
 # user-writable. build-setup.ps1 only builds; the Setup.exe registers later.)
 Get-ChildItem (Split-Path $dll) -Filter 'xlit_tsf.dll.*.old' -ErrorAction SilentlyContinue |
     ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
@@ -49,7 +49,7 @@ if (Test-Path $dll) {
     } catch {
         $aside = "$dll.$(Get-Date -Format yyyyMMddHHmmss).old"
         Rename-Item $dll $aside -Force
-        Write-Host "    ($(Split-Path $dll -Leaf) in use — renamed to $(Split-Path $aside -Leaf))" -ForegroundColor DarkGray
+        Write-Host "    ($(Split-Path $dll -Leaf) in use - renamed to $(Split-Path $aside -Leaf))" -ForegroundColor DarkGray
     }
 }
 

@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Install "Input by Prabidhi.bid" (Windows TSF text service). No installer
-    toolchain — plain PowerShell. Self-elevates.
+    toolchain - plain PowerShell. Self-elevates.
 
 .DESCRIPTION
     Builds xlit_tsf.dll (unless -NoBuild), copies it to
@@ -20,7 +20,7 @@
     release (default) or debug.
 
 .PARAMETER Elevated
-    Internal — set on the relaunched elevated instance so it pauses on exit.
+    Internal - set on the relaunched elevated instance so it pauses on exit.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\install.ps1
@@ -67,7 +67,7 @@ function Clear-Dll([string]$path) {
     } catch {
         $aside = "$path.$(Get-Date -Format yyyyMMddHHmmss).old"
         Rename-Item $path $aside -Force
-        Write-Host "    (in use — renamed aside: $(Split-Path $aside -Leaf))" -ForegroundColor DarkGray
+        Write-Host "    (in use - renamed aside: $(Split-Path $aside -Leaf))" -ForegroundColor DarkGray
     }
 }
 
@@ -129,7 +129,7 @@ try {
     Write-Host "Installed. `"$AppName`" is registered and enabled." -ForegroundColor Green
     Write-Host 'Next: Settings > Time & language > Language & region > Add a language > Nepali,'
     Write-Host 'then pick it from the taskbar language button (Win+Space).'
-    Write-Host 'Sign out / in if it is not listed yet — apps already running keep the'
+    Write-Host 'Sign out / in if it is not listed yet - apps already running keep the'
     Write-Host 'old registration mapped until then.'
     $code = 0
 }
