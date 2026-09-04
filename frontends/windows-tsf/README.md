@@ -132,6 +132,29 @@ swept on the next run.
 - The taskbar input indicator appears only with 2+ input methods; the built-in
   English keyboard plus this one is enough.
 
+## Troubleshooting: a blocked sign on the input method
+
+Windows draws a prohibition sign over a text service it could not **load** or
+whose **`Activate` returned an error**. It never says which, so work down:
+
+```
+powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\diagnose.ps1
+```
+
+That checks the COM registration per bitness, the TSF profile, your language
+list, and whether the DLL still loads. Two causes are already designed out:
+
+- **A missing runtime.** The DLL is linked with a static CRT
+  (`.cargo/config.toml`), so it needs no `VCRUNTIME140.dll` in the host
+  process — only core Windows DLLs. Confirm with
+  `dumpbin /dependents xlit_tsf.dll`.
+- **A failing `Activate`.** Every step of activation is best-effort and
+  logged; it cannot return an error. If the key sink is refused, the input
+  method still loads and types plain Latin, and the trace build says so.
+
+If the sign persists, build with `--features trace` and watch DebugView while
+switching to the input method.
+
 ## Troubleshooting: typing does nothing, or stays Latin
 
 - **Nothing appears at all.** The control refused the composition. We report the

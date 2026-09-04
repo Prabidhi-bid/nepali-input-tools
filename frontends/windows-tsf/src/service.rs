@@ -58,16 +58,49 @@ impl Drop for TextService {
 }
 
 impl ITfTextInputProcessor_Impl for TextService_Impl {
+    /// Bring the input method up on this thread.
+    ///
+    /// **This must not fail.** Windows marks a text service whose `Activate`
+    /// returns an error as unavailable and draws the blocked sign over it in
+    /// the switcher — with no clue as to why. So every step here is
+    /// best-effort and logged: a TIP that activates but cannot intercept keys
+    /// is a bad day, while a TIP that refuses to activate is an unexplainable
+    /// one. The trace build says which happened.
     fn Activate(&self, ptim: Ref<'_, ITfThreadMgr>, tid: u32) -> Result<()> {
-        let thread_mgr = ptim.ok()?;
+        // Windows can activate a thread that was never deactivated; advising a
+        // second sink for the same client id would fail, so tear down first.
+        self.teardown();
+
+        let Ok(thread_mgr) = ptim.ok() else {
+            crate::debug("Activate: no thread manager");
+            return Ok(());
+        };
+        let keystroke: ITfKeystrokeMgr = match thread_mgr.cast() {
+            Ok(k) => k,
+            Err(e) => {
+                crate::debug(&format!("Activate: no keystroke manager: {e}"));
+                return Ok(());
+            }
+        };
+
         let sess = Session::new(tid);
         let sink: ITfKeyEventSink = KeyEventSink::new(sess.clone()).into();
-        let keystroke: ITfKeystrokeMgr = thread_mgr.cast()?;
 
-        unsafe { keystroke.AdviseKeyEventSink(tid, &sink, true)? };
+        // Foreground registration is what gets us keys ahead of the
+        // application; if something already holds it, a background advise is
+        // still better than none.
+        let advised = unsafe { keystroke.AdviseKeyEventSink(tid, &sink, true) }
+            .or_else(|e| {
+                crate::debug(&format!("foreground key sink refused ({e}); trying background"));
+                unsafe { keystroke.AdviseKeyEventSink(tid, &sink, false) }
+            });
+        if let Err(e) = advised {
+            crate::debug(&format!("Activate: key sink refused: {e} - keys will pass through"));
+            return Ok(());
+        }
 
-        // Best-effort: another text service may already own this chord, which
-        // costs us the toggle but must not stop the input method loading.
+        // Another text service may already own this chord, which costs us the
+        // toggle but must not stop the input method loading.
         let toggle = toggle_key();
         let desc: Vec<u16> = "Nepali on/off".encode_utf16().collect();
         if let Err(e) = unsafe { keystroke.PreserveKey(tid, &GUID_TOGGLE, &toggle, &desc) } {
@@ -80,14 +113,24 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
     }
 
     fn Deactivate(&self) -> Result<()> {
-        if let Some(a) = self.inner.borrow_mut().take() {
-            unsafe {
-                let _ = a.keystroke.UnpreserveKey(&GUID_TOGGLE, &a.toggle);
-                let _ = a.keystroke.UnadviseKeyEventSink(a.tid);
-            }
-            a.sess.borrow_mut().window.hide();
-        }
+        self.teardown();
         crate::debug("Deactivate");
         Ok(())
+    }
+}
+
+impl TextService_Impl {
+    /// Release everything `Activate` took. Safe to call when nothing is active,
+    /// and safe to call twice — a sink left advised pins this DLL in the host
+    /// process for the rest of its life.
+    fn teardown(&self) {
+        let Some(a) = self.inner.borrow_mut().take() else { return };
+        unsafe {
+            let _ = a.keystroke.UnpreserveKey(&GUID_TOGGLE, &a.toggle);
+            let _ = a.keystroke.UnadviseKeyEventSink(a.tid);
+        }
+        if let Ok(mut s) = a.sess.try_borrow_mut() {
+            s.window.hide();
+        };
     }
 }

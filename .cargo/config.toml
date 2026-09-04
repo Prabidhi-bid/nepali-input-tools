@@ -1,0 +1,13 @@
+# Static CRT on Windows.
+#
+# xlit_tsf.dll is loaded into *every* process that takes text input. Linking the
+# CRT dynamically makes each of those loads depend on VCRUNTIME140.dll being
+# resolvable from that process, and a text service that fails to load shows up
+# as an unexplained blocked sign in the language switcher rather than an error.
+# Static linking costs ~100 KB and removes the dependency entirely.
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.i686-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
