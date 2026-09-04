@@ -60,6 +60,20 @@ if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProces
 $RegsvrNative = Join-Path $sys 'regsvr32.exe'
 $Regsvr32bit  = Join-Path $env:windir 'SysWOW64\regsvr32.exe'
 
+# regsvr32.exe is GUI-subsystem, so PowerShell's call operator returns before
+# it has done anything. Without waiting, the registry sweep below can run while
+# the DLL is still unregistering and put the keys back.
+function Invoke-Regsvr32 {
+    param([string]$Exe, [string]$Dll, [switch]$Unregister)
+    $argv = @('/s')
+    if ($Unregister) { $argv += '/u' }
+    $argv += "`"$Dll`""
+    try {
+        $p = Start-Process -FilePath $Exe -ArgumentList $argv -Wait -PassThru -WindowStyle Hidden
+        return $p.ExitCode
+    } catch { return -1 }
+}
+
 try {
     # 1. remove from the user's language list
     try {
@@ -79,11 +93,11 @@ try {
     $x86Dll  = Join-Path $InstallDir 'x86\xlit_tsf.dll'
     if (Test-Path $rootDll) {
         Write-Host "==> regsvr32 /s /u (native)" -ForegroundColor Cyan
-        & $RegsvrNative /s /u $rootDll
+        Invoke-Regsvr32 -Exe $RegsvrNative -Dll $rootDll -Unregister | Out-Null
     }
     if ((Test-Path $x86Dll) -and (Test-Path $Regsvr32bit)) {
         Write-Host "==> regsvr32 /s /u (x86)" -ForegroundColor Cyan
-        & $Regsvr32bit /s /u $x86Dll
+        Invoke-Regsvr32 -Exe $Regsvr32bit -Dll $x86Dll -Unregister | Out-Null
     }
 
     # 3. registry fallback (covers a missing/unloadable DLL)
@@ -124,8 +138,12 @@ try {
             Remove-Item $InstallDir -Recurse -Force -ErrorAction Stop
             Write-Host "Removed $InstallDir" -ForegroundColor DarkGray
         } catch {
+            # Rename-Item takes a bare name, not a path. A mapped DLL usually
+            # renames even though it cannot be deleted, which frees the name.
             Get-ChildItem $InstallDir -Recurse -Filter *.dll -ErrorAction SilentlyContinue | ForEach-Object {
-                try { Rename-Item $_.FullName "$($_.FullName).$(Get-Date -Format yyyyMMddHHmmss).old" -Force } catch {}
+                try {
+                    Rename-Item -LiteralPath $_.FullName -NewName "$($_.Name).$(Get-Date -Format yyyyMMddHHmmss).old" -Force -ErrorAction Stop
+                } catch {}
             }
             Start-Process cmd.exe -WindowStyle Hidden -ArgumentList `
                 '/c', "timeout /t 3 /nobreak >nul & rmdir /s /q `"$InstallDir`""
