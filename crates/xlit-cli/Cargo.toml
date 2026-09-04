@@ -11,3 +11,5 @@ path = "src/main.rs"
 
 [dependencies]
 xlit-core = { path = "../xlit-core" }
+xlit-dict = { path = "../xlit-dict" }
+xlit-learn = { path = "../xlit-learn" }

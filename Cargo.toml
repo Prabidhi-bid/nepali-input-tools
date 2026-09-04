@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "crates/xlit-core",
+    "crates/xlit-dict",
+    "crates/xlit-learn",
     "crates/xlit-cli",
 ]
 

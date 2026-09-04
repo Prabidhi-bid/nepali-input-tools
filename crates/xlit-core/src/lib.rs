@@ -36,6 +36,22 @@ pub struct Candidate {
     pub score: i32,
 }
 
+/// Helper for [`Ranker`] implementations: insert `text` as a candidate, or — if
+/// an entry with the same text already exists — raise its score and adopt
+/// `source` when `score` is higher than what's there.
+pub fn merge_candidate(cands: &mut Vec<Candidate>, text: String, score: i32, source: Source) {
+    for c in cands.iter_mut() {
+        if c.text == text {
+            if score > c.score {
+                c.score = score;
+                c.source = source;
+            }
+            return;
+        }
+    }
+    cands.push(Candidate { text, source, score });
+}
+
 /// A refinement layer. Implementors see the raw input and the candidates so far
 /// and return a new list (add, drop, re-score). Layers run in registration order.
 pub trait Ranker: Send + Sync {
@@ -92,9 +108,21 @@ impl Engine {
             cands = r.rank(input, cands);
         }
 
-        cands.sort_by(|a, b| b.score.cmp(&a.score));
-        cands.dedup_by(|a, b| a.text == b.text);
-        cands
+        // Collapse duplicates, keeping the highest-scoring entry per text.
+        let mut merged: Vec<Candidate> = Vec::with_capacity(cands.len());
+        'next: for c in cands {
+            for m in &mut merged {
+                if m.text == c.text {
+                    if c.score > m.score {
+                        *m = c;
+                    }
+                    continue 'next;
+                }
+            }
+            merged.push(c);
+        }
+        merged.sort_by(|a, b| b.score.cmp(&a.score));
+        merged
     }
 }
 

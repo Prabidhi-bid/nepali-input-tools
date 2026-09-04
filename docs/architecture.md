@@ -62,22 +62,31 @@ neural fallback fires.
 - `Candidate { text, source, score }`, `Source { Rule, Dictionary, Learned,
   Model, Raw }`.
 
-## Dictionary layer (next)
+## Dictionary layer (`xlit-dict`) — done
 
-- Build: word list + corpus frequencies → `fst::Map<word, packed(freq, flags)>`
-  (BurntSushi `fst` crate). One file per language, mmap'd.
-- Use: exact match boosts the matching candidate; prefix search yields
-  completions; entries the rule engine can't reach (irregular spellings) are
-  added as candidates.
-- Data sources for Nepali: Leipzig Corpora (nep_news / nep_wikipedia) for
-  frequencies, the Nepali National Corpus, `nepali-spellcheck` / Hunspell
-  `ne_NP` word lists, FLORES / NLLB parallel data for romanization pairs.
+- Structure: `fst::Map<Devanagari word → u64 freq>` (BurntSushi `fst`).
+  `DictRanker::builtin()` builds it in memory from the compiled-in seed
+  (`seed/ne.tsv`); `DictRanker::open(path)` memory-maps a large prebuilt `.fst`
+  (`src/bin/build.rs` compiles a TSV → `.fst`).
+- Per input, three passes against the rule output:
+  1. **exact** — `map.get(word)` → score 300 + log-freq bonus, `Source::Dictionary`.
+  2. **fuzzy** — `Levenshtein(word, 1)` → 200 + freq bonus (+15 when the hit is
+     the same character length, i.e. a substitution: vowel length `ि`/`ी`,
+     anusvara, sibilant). This is what turns `नेपालि` → `नेपाली`.
+  3. **prefix** — `Str(word).starts_with()` → up to 3 completions at ~90 + bonus/2.
+- All results funnel through `xlit_core::merge_candidate` (dedupe, keep max score).
+- Data sources to grow the seed: Leipzig Corpora (`nep_news` / `nep_wikipedia`)
+  for frequencies, Nepali National Corpus, Hunspell `ne_NP` word list.
 
-## Learning store (next)
+## Learning store (`xlit-learn`) — done
 
-- SQLite via `rusqlite` (bundled). Table `picks(input, chosen, count, last_used)`.
-- On commit, bump the row; `Ranker` adds a score bonus scaled by recency/count.
-- Fully local. Never leaves the machine.
+- File-backed: a pretty-printed JSON array of `{input, chosen, count, last_used}`,
+  single writer, atomic replace (`write tmp` + `rename`). No C dependency, no
+  runtime deps beyond `serde_json`. Swap for SQLite behind the same API only if
+  the data ever gets large.
+- On commit, bump `count` + `last_used`; the `Ranker` adds `400 + count*12
+  (+40 if used in the last day)` to the matching candidate as `Source::Learned`.
+- Fully local. Never leaves the machine. CLI writes `./xlit-learn.json`.
 
 ## Daemon + IPC (next)
 
@@ -104,8 +113,10 @@ the engine to `commit` for learning.
 ## Milestones
 
 1. **M1 — engine core** *(done)*: rule engine, Nepali schema, CLI, tests.
-2. **M2 — dictionary + learning**: FST layer, SQLite store, accuracy harness
-   (top-1 / top-5 / CER against a held-out word list).
+2. **M2 — dictionary + learning** *(done)*: `xlit-dict` FST layer,
+   `xlit-learn` JSON store, wired into the CLI (numbers commit picks).
+   *Still open:* corpus-derived seed list, accuracy harness (top-1 / top-5 / CER
+   against a held-out word list).
 3. **M3 — daemon**: `xlit-daemon` + IPC, CLI switches to client mode.
 4. **M4 — Linux IBus**: end-to-end typing in real apps on Linux.
 5. **M5 — Fcitx5**.

@@ -8,6 +8,10 @@
 *.arpa
 *.klm
 
+# runtime state
+xlit-learn.json
+*.json.tmp
+
 # python (training/)
 __pycache__/
 .venv/

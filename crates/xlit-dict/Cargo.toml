@@ -1,0 +1,15 @@
+[package]
+name = "xlit-dict"
+version = "0.1.0"
+description = "Dictionary re-ranking layer: mmap'd FST of Devanagari words + frequencies."
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+xlit-core = { path = "../xlit-core" }
+fst = "0.4"
+memmap2 = "0.9"
+
+[[bin]]
+name = "build"
+path = "src/bin/build.rs"
