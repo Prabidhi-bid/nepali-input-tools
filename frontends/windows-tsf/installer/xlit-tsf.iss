@@ -6,9 +6,9 @@
 ;
 ; Install flow (elevated via PrivilegesRequired=admin):
 ;   1. copy xlit_tsf.dll to {app}
-;   2. regsvr32 /s  -> DllRegisterServer writes the COM CLSID keys, the
-;      HKLM\SOFTWARE\Microsoft\CTF\TIP profile, EnableLanguageProfile, and the
-;      TIPCAP_* categories (machine-wide)
+;   2. regsvr32 /s  -> DllRegisterServer writes the COM CLSID keys and, via
+;      ITfInputProcessorProfileMgr::RegisterProfile, the HKLM\SOFTWARE\Microsoft
+;      \CTF\TIP profile (enabled-by-default) + the TIPCAP_* categories
 ;   3. as the *current* user (runascurrentuser): add "ne-NP" + this TIP to the
 ;      user's language list via Set-WinUserLanguageList, so it shows up in the
 ;      taskbar / Win+Space switcher without a manual Settings visit

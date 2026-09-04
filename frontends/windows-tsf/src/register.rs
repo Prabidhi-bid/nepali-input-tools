@@ -4,14 +4,15 @@
 //! the TSF APIs to register the text service, its Nepali language profile, and
 //! the keyboard-TIP category. `regsvr32` must be run elevated (HKLM writes).
 
-use windows::core::{Error, Result, GUID, PCWSTR};
+use windows::core::{Error, Interface, Result, GUID, PCWSTR};
 use windows::Win32::Foundation::{E_FAIL, S_FALSE};
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
     COINIT_APARTMENTTHREADED,
 };
+use windows::Win32::UI::Input::KeyboardAndMouse::HKL;
 use windows::Win32::UI::TextServices::{
-    ITfCategoryMgr, ITfInputProcessorProfiles, CLSID_TF_CategoryMgr,
+    ITfCategoryMgr, ITfInputProcessorProfileMgr, ITfInputProcessorProfiles, CLSID_TF_CategoryMgr,
     CLSID_TF_InputProcessorProfiles, GUID_TFCAT_TIPCAP_COMLESS,
     GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT, GUID_TFCAT_TIPCAP_INPUTMODECOMPARTMENT,
     GUID_TFCAT_TIPCAP_SECUREMODE, GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT,
@@ -81,18 +82,23 @@ pub(crate) fn register() -> Result<()> {
             CoCreateInstance(&CLSID_TF_InputProcessorProfiles, None, CLSCTX_INPROC_SERVER)?;
         profiles.Register(&CLSID_XLIT)?;
 
+        // Win8+ profile registration via ITfInputProcessorProfileMgr (same COM
+        // object, newer interface). One call that also enables the profile by
+        // default — no separate AddLanguageProfile + EnableLanguageProfile.
+        let mgr: ITfInputProcessorProfileMgr = profiles.cast()?;
         let desc = wide(SERVICE_DESC);
-        profiles.AddLanguageProfile(
+        mgr.RegisterProfile(
             &CLSID_XLIT,
             LANGID_NE_NP,
             &GUID_PROFILE,
             &desc,
-            &[], // no icon file yet
-            0,
+            &[],            // no icon file yet
+            0,              // icon index
+            HKL::default(), // no substitute keyboard layout
+            0,              // no preferred layout
+            true,           // enabled by default
+            0,              // flags: 0 = normal, listed in Settings
         )?;
-        // AddLanguageProfile leaves the profile disabled; without this it never
-        // shows in the taskbar language flyout or Win+Space.
-        profiles.EnableLanguageProfile(&CLSID_XLIT, LANGID_NE_NP, &GUID_PROFILE, true)?;
 
         let categories: ITfCategoryMgr =
             CoCreateInstance(&CLSID_TF_CategoryMgr, None, CLSCTX_INPROC_SERVER)?;
@@ -127,6 +133,9 @@ pub(crate) fn unregister() -> Result<()> {
             None,
             CLSCTX_INPROC_SERVER,
         ) {
+            if let Ok(mgr) = profiles.cast::<ITfInputProcessorProfileMgr>() {
+                let _ = mgr.UnregisterProfile(&CLSID_XLIT, LANGID_NE_NP, &GUID_PROFILE, 0);
+            }
             let _ = profiles.Unregister(&CLSID_XLIT);
         }
     }

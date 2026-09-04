@@ -12,9 +12,10 @@
     It self-elevates: if not already running as Administrator it relaunches itself
     through UAC and exits the unelevated copy.
 
-    NOTE: regsvr32's DllRegisterServer calls EnableLanguageProfile, which writes
-    per-user (HKCU) state. Approve the UAC prompt as the SAME user you log in with,
-    or the profile is enabled only for the other account.
+    NOTE: DllRegisterServer's RegisterProfile is machine-wide (HKLM). The
+    per-user "add to language list" step (Set-WinUserLanguageList) runs in this
+    script's context, so approve the UAC prompt as the SAME user you log in with
+    or the keyboard is added to the other account's list.
 
 .PARAMETER SkipRegister
     Build only; leave the service unregistered.

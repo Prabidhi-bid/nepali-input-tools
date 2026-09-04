@@ -135,11 +135,12 @@ the engine to `commit` for learning.
 5. **M5 — Fcitx5**.
 6. **M6 — Windows TSF** (`frontends/windows-tsf`, `xlit-tsf.dll`), staged:
    - **M6.1** *(done)*: registrable COM DLL — `regsvr32` writes the CLSID keys,
-     TSF profile (`Input by Prabidhi.bid`, LANGID `0x0461`), `EnableLanguageProfile`,
-     and the keyboard + `TIPCAP_*` categories (`IMMERSIVESUPPORT` /
-     `SYSTRAYSUPPORT` for the modern switcher; **not** `COMLESS` — this is a
-     classic COM server and declaring it hid the TIP from `TextInputHost`).
-     Activatable; no key handling yet. Install: `frontends/windows-tsf/installer/`.
+     the TSF profile via `ITfInputProcessorProfileMgr::RegisterProfile`
+     (`Input by Prabidhi.bid`, LANGID `0x0461`, enabled-by-default), and the
+     keyboard + `TIPCAP_*` categories (`IMMERSIVESUPPORT` / `SYSTRAYSUPPORT` for
+     the modern switcher; **not** `COMLESS` — this is a classic COM server and
+     declaring it hid the TIP from `TextInputHost`). Activatable; no key
+     handling yet. Install: `frontends/windows-tsf/installer/`.
    - **M6.2**: `ITfKeyEventSink` + inline TSF composition — buffer ASCII, replace
      with the engine's top candidate on a break key.
    - **M6.3**: candidate window (layered popup) + number-key select + `xlit-learn`.

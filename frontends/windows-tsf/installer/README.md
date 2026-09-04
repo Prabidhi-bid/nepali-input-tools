@@ -45,8 +45,9 @@ What it does (elevated):
 1. `cargo build -p xlit-tsf --release` (skip with `-NoBuild`; `-Configuration debug` for a debug build).
 2. Copy `xlit_tsf.dll` + `uninstall.ps1` to `%ProgramFiles%\Prabidhi.bid Input\`.
 3. `regsvr32 /s /u` then `/s` the installed DLL — a clean deregister → register.
-   `DllRegisterServer` writes the COM CLSID keys, the
-   `HKLM\SOFTWARE\Microsoft\CTF\TIP` profile, `EnableLanguageProfile`, and the
+   `DllRegisterServer` writes the COM CLSID keys and, via
+   `ITfInputProcessorProfileMgr::RegisterProfile`, the
+   `HKLM\SOFTWARE\Microsoft\CTF\TIP` profile (enabled-by-default) + the
    `TIPCAP_*` categories.
 4. `Set-WinUserLanguageList` — add `ne-NP` + this TIP to your language list.
 5. Add an **Apps & features** entry (`…\Uninstall\PrabidhibidInput`) whose
@@ -104,11 +105,12 @@ more in compatibility and support than they cost an analyst.
 
 ## Limitations / TODO
 
-- **Per-user.** `EnableLanguageProfile` and `Set-WinUserLanguageList` both write
-  `HKCU` — they cover the user who runs the installer. Other users on the same
-  machine get the machine-wide registration but must add the keyboard themselves
-  (Settings → Language → Nepali → Keyboards). An `ActiveSetup` stub (per-user
-  command on first logon) is the fix.
+- **Per-user.** `RegisterProfile` is machine-wide (HKLM), but the
+  `Set-WinUserLanguageList` step that puts it in the switcher is `HKCU` — it
+  covers the user who runs the installer. Other users on the same machine get
+  the registration but must add the keyboard themselves (Settings → Language →
+  Nepali → Keyboards). An `ActiveSetup` stub (per-user command on first logon)
+  is the fix.
 - **x64 only.** No x86 / ARM64 payload yet, so 32-bit apps won't load the TIP.
 - `COMLESS` category is deliberately not registered (classic COM server only) —
   it was hiding the TIP from the modern switcher.

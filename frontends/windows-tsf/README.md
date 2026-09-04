@@ -92,16 +92,16 @@ those `.old` files on the next run.
 
 ## Troubleshooting: not in the taskbar switcher
 
-- The profile only shows once **Nepali is in your language list** (step 1) — the
-  TIP is bound to LANGID `0x0461`, so with no ne-NP entry there is nothing to
-  attach to.
-- `DllRegisterServer` now calls `EnableLanguageProfile` and registers the
-  `TIPCAP_IMMERSIVESUPPORT` / `SYSTRAYSUPPORT` categories; an install from before
-  that change is stale. Re-run `regsvr32 /u ...` then `regsvr32 ...`, or just
-  `regsvr32 ...` again to rewrite the keys, then sign out / in.
-- `EnableLanguageProfile` writes per-user (HKCU) state. Run `regsvr32` elevated
-  **as the same user** you log in as; a separate "Administrator" account enables
-  it only for that account.
+- The switcher reads **your language list**, not the registry. `install.ps1` /
+  the Setup.exe add `ne-NP` + this TIP with `Set-WinUserLanguageList`; if you
+  registered by hand with `regsvr32`, add the keyboard yourself in Settings.
+- `DllRegisterServer` uses `ITfInputProcessorProfileMgr::RegisterProfile`
+  (enabled-by-default, machine-wide/HKLM) plus the `IMMERSIVESUPPORT` /
+  `SYSTRAYSUPPORT` categories and does **not** claim `COMLESS`. An install from
+  before those changes is stale — `regsvr32 /u` then `regsvr32` again, then sign
+  out / in.
+- `Set-WinUserLanguageList` writes per-user (HKCU); run it as the account you
+  log in with (the installers self-elevate as the same user).
 - The taskbar input indicator appears only with 2+ input methods; the built-in
   English keyboard plus this one is enough.
 
