@@ -143,10 +143,12 @@ the engine to `commit` for learning.
      with the engine's top candidate on a break key.
    - **M6.3**: candidate window (layered popup) + number-key select + `xlit-learn`.
    - **M6.4**: language-bar icon, x86 build, Chrome/Electron/UWP fixes, toggle key.
-   - **M6.5** *(initial)*: `installer/install.ps1` + `uninstall.ps1` — copy the
-     DLL to Program Files, `regsvr32`, Apps & features entry; no toolchain.
-     TODO: a signed MSI (deferred no-impersonate CAs, per-user
-     `EnableLanguageProfile` via Active Setup), x86/ARM64 payloads.
+   - **M6.5** *(initial)*: `installer/` — `build-setup.ps1` produces an Inno
+     Setup `Setup.exe`; `install.ps1` / `uninstall.ps1` are the toolchain-free
+     path. Both register via `regsvr32`. Release DLL is stripped with trace
+     behind a cargo feature. TODO: code signing, a signed MSI (deferred
+     no-impersonate CAs, per-user `EnableLanguageProfile` via Active Setup),
+     x86/ARM64 payloads.
 7. **M7 — ONNX OOV fallback**: `training/` pipeline (Dakshina `ne` +
    Aksharantar `nep` → small char transformer → int8 ONNX), lazy-loaded `Ranker`.
 8. **M8 — packaging**: signed installers, per-distro packages, language packs.

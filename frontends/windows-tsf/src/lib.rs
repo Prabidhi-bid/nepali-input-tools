@@ -18,7 +18,9 @@ mod register;
 use core::ffi::c_void;
 use std::sync::atomic::{AtomicIsize, AtomicPtr, Ordering};
 
-use windows::core::{implement, Interface, Ref, Result, GUID, HRESULT, PCWSTR};
+use windows::core::{implement, Interface, Ref, Result, GUID, HRESULT};
+#[cfg(feature = "trace")]
+use windows::core::PCWSTR;
 use windows::Win32::Foundation::{
     CLASS_E_CLASSNOTAVAILABLE, CLASS_E_NOAGGREGATION, E_POINTER, HMODULE, S_FALSE, S_OK,
 };
@@ -62,11 +64,18 @@ pub(crate) fn dll_path() -> String {
     String::from_utf16_lossy(&buf[..n])
 }
 
+/// Emit a trace line to the Win32 debugger (DebugView). Compiled to a no-op
+/// unless the `trace` feature is set, so release / installer builds don't leak
+/// internal flow. Re-enable for troubleshooting with `--features trace`.
+#[cfg(feature = "trace")]
 pub(crate) fn debug(msg: &str) {
     let mut w: Vec<u16> = format!("[xlit-tsf] {msg}\r\n").encode_utf16().collect();
     w.push(0);
     unsafe { windows::Win32::System::Diagnostics::Debug::OutputDebugStringW(PCWSTR(w.as_ptr())) };
 }
+
+#[cfg(not(feature = "trace"))]
+pub(crate) fn debug(_msg: &str) {}
 
 // ---------------------------------------------------------------------------
 // DllMain

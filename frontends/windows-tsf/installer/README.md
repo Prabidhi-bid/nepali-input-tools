@@ -1,9 +1,30 @@
 # Installer — `Input by Prabidhi.bid`
 
-Plain-PowerShell install / uninstall for the Windows TSF text service. No
-installer toolchain (no WiX, no .NET). Both scripts self-elevate.
+Two ways to install the Windows TSF text service:
 
-## Install
+- **`build-setup.ps1`** → a distributable `Setup.exe` (Inno Setup).
+- **`install.ps1` / `uninstall.ps1`** → plain PowerShell, no toolchain, for
+  dev boxes and power users.
+
+Both register the DLL the same way (`regsvr32` → its `DllRegisterServer`).
+
+## Distributable: `Setup.exe` (Inno Setup)
+
+Prerequisite (one time): `winget install JRSoftware.InnoSetup`
+
+```
+powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\build-setup.ps1
+```
+
+→ `installer\Input-by-Prabidhi.bid-<ver>-setup.exe`, DLL embedded. Options:
+`-Version 0.2.0`, `-Configuration debug`, `-Password <pw>` (encrypt payload).
+
+[`xlit-tsf.iss`](xlit-tsf.iss) installs to `%ProgramFiles%\Prabidhi.bid Input\`,
+runs `regsvr32 /s` on install and `/s /u` on uninstall, recycles
+`ctfmon`/`TextInputHost`, and lets Inno own the Apps & features entry and file
+removal. Keep `AppId` stable across releases.
+
+## Dev: `install.ps1`
 
 ```
 powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\install.ps1
@@ -40,6 +61,35 @@ powershell -ExecutionPolicy Bypass -File "%ProgramFiles%\Prabidhi.bid Input\unin
 deletes the install folder, removes the Apps & features entry. Files still in
 use are renamed aside and swept after the script exits / on next sign-out.
 
+## Hardening against reverse engineering
+
+You can raise the cost; you can't stop a determined analyst from reversing a
+native DLL. What actually helps, most valuable first:
+
+1. **Code-sign the DLL and the `Setup.exe`.** This is integrity / anti-tamper —
+   the one that matters. An unsigned build can be patched and re-shipped
+   silently. With an OV/EV Authenticode cert:
+   `signtool sign /fd sha256 /a /tr http://timestamp.digicert.com /td sha256 <file>`
+   and set `SignTool=` in [`xlit-tsf.iss`](xlit-tsf.iss) (commented example there).
+2. **Ship a stripped release with no trace.** Done: the workspace release
+   profile is `strip = true` + `lto` + `opt-level = "z"`, and the DebugView
+   calls are behind the `trace` cargo feature (**off by default**). Only
+   `cargo build -p xlit-tsf --release --features trace` emits `[xlit-tsf] …`.
+3. **Encrypt the installer payload** — `build-setup.ps1 -Password <pw>` →
+   Inno `Encryption`. Blocks casual `innounp` / `7z` extraction; the password
+   still ships with the installer, so it's speed-bump grade.
+4. **Commercial protectors** (VMProtect / Themida / Enigma) add VM / anti-debug.
+   Caveat for a TSF TIP: the DLL loads into *every* process (Explorer, browsers,
+   AV), and packed / anti-debug binaries routinely trip AV heuristics and
+   Windows CIG/ACG in those hosts. Test broadly; several IME vendors don't pack
+   for this reason.
+5. **String obfuscation** (`obfstr` / `litcrypt`) only once something sensitive
+   is embedded (license keys, endpoints). Nothing today warrants it — the CLSID
+   and display name are in the registry after install anyway.
+
+Not worth doing: anti-debugger tricks that fight security tooling — they cost
+more in compatibility and support than they cost an analyst.
+
 ## Limitations / TODO
 
 - **Per-user enable.** `DllRegisterServer` calls `EnableLanguageProfile`, an
@@ -47,6 +97,5 @@ use are renamed aside and swept after the script exits / on next sign-out.
   need to enable the keyboard once from language settings. An `ActiveSetup`
   stub (per-user command on first logon) is the fix.
 - **x64 only.** No x86 / ARM64 payload yet, so 32-bit apps won't load the TIP.
-- **Not signed.** SmartScreen / PowerShell may warn.
-- This is a script, not a redistributable `.exe`/`.msi`. A signed MSI (deferred
-  no-impersonate custom actions + Active Setup) is the eventual M6.5 target.
+- A signed MSI (deferred no-impersonate custom actions + Active Setup) is the
+  eventual M6.5 target; the Inno `Setup.exe` covers it until then.

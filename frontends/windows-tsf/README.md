@@ -20,9 +20,11 @@ Output: `target\release\xlit_tsf.dll` (x64).
 
 ## Install
 
-**Recommended:** [`installer\install.ps1`](installer/install.ps1) — self-elevating,
-no toolchain. Builds the DLL, copies it to Program Files, registers it, and adds
-an Apps & features entry. See [`installer/README.md`](installer/README.md).
+See [`installer/`](installer) for both routes:
+
+- **`build-setup.ps1`** — a distributable `Setup.exe` (Inno Setup).
+- **`install.ps1`** — self-elevating, no toolchain: builds the DLL, copies it to
+  Program Files, registers it, adds an Apps & features entry.
 
 ```
 powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\install.ps1
@@ -47,7 +49,14 @@ At M6.1 typing still produces normal Latin — activation is only logged.
 
 ## Verify activation
 
-Run [DebugView](https://learn.microsoft.com/sysinternals/downloads/debugview)
+Trace output is behind the `trace` feature (off by default so release /
+installer builds stay quiet). Build with it on:
+
+```
+cargo build -p xlit-tsf --release --features trace
+```
+
+Then run [DebugView](https://learn.microsoft.com/sysinternals/downloads/debugview)
 as admin (enable *Capture Global Win32*). Switching to the input method prints:
 
 ```

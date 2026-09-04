@@ -10,6 +10,12 @@ publish = false
 name = "xlit_tsf"
 crate-type = ["cdylib"]
 
+[features]
+# Off by default: release / installer builds ship without the DebugView trace
+# calls (`[xlit-tsf] ...`). Enable for troubleshooting: --features trace.
+default = []
+trace = []
+
 [dependencies]
 xlit-core = { path = "../../crates/xlit-core" }
 
