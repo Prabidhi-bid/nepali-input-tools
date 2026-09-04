@@ -276,7 +276,15 @@ mod tests {
     fn passthrough() {
         let e = eng();
         assert_eq!(e.transliterate("namaste sabai"), "नमस्ते सबै");
-        assert_eq!(e.transliterate("web 2.0"), "वेब 2.0");
+    }
+
+    #[test]
+    fn digits_convert() {
+        let e = eng();
+        assert_eq!(e.transliterate("2025"), "२०२५");
+        // digits do not disturb syllable state around them
+        assert_eq!(e.transliterate("web 2.0"), "वेब २.०");
+        assert_eq!(e.transliterate("saal 2082"), "साल २०८२");
     }
 
     #[test]

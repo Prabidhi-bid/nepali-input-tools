@@ -86,6 +86,15 @@ impl Engine {
         self.rule.name()
     }
 
+    /// Straight rule-engine output, with no ranking layers.
+    ///
+    /// Use this when the answer is deterministic and re-ranking would only get
+    /// in the way — a lone digit, say, where the dictionary's fuzzy pass could
+    /// otherwise out-score the correct literal with some unrelated short word.
+    pub fn transliterate(&self, input: &str) -> String {
+        self.rule.transliterate(input)
+    }
+
     /// Ranked candidates for a raw Latin buffer, best first.
     pub fn candidates(&self, input: &str) -> Vec<Candidate> {
         let mut cands = Vec::new();

@@ -73,6 +73,22 @@ pub fn candidates(input: &str) -> Vec<String> {
     out
 }
 
+/// The script's own form of a single character — Devanagari digits, mostly.
+///
+/// Deliberately the bare rule engine rather than [`candidates`]: for a
+/// one-character input the dictionary's fuzzy pass can out-score the correct
+/// literal with some unrelated short word, so `2` would come back as anything
+/// but २.
+pub fn literal(c: char) -> String {
+    let s = c.to_string();
+    let out = shared().engine.transliterate(&s);
+    if out.is_empty() {
+        s
+    } else {
+        out
+    }
+}
+
 /// Remember that `chosen` was committed for `input`, so it ranks first next
 /// time. Best-effort: a failed write must never break typing.
 pub fn commit(input: &str, chosen: &str) {

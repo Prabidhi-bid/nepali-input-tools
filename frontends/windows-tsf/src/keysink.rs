@@ -51,6 +51,9 @@ enum Action {
     CommitWith(String),
     /// Finish the word and insert nothing.
     Commit,
+    /// A number-row key that is not picking a candidate: type the Devanagari
+    /// digit, committing any word in progress first.
+    Digit(char),
 }
 
 fn down(vk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY) -> bool {
@@ -101,6 +104,17 @@ fn classify(vk: u16, scan: u32, composing: bool, ncands: usize) -> Action {
         return Action::Letter(c);
     }
 
+    // The number row does double duty. Mid-word it picks from the candidate
+    // list, the way every other IME does; the rest of the time it types a
+    // Devanagari digit. Shift+number is punctuation, never either.
+    if (0x30..=0x39).contains(&vk) && !shift {
+        let pick = vk.wrapping_sub(0x31) as usize; // '1' -> 0; '0' wraps out of range
+        if composing && pick < ncands {
+            return Action::Pick(pick);
+        }
+        return Action::Digit((vk as u8) as char);
+    }
+
     if !composing {
         return Action::Ignore;
     }
@@ -110,10 +124,6 @@ fn classify(vk: u16, scan: u32, composing: bool, ncands: usize) -> Action {
         v if v == VK_ESCAPE.0 => Action::Cancel,
         v if v == VK_UP.0 => Action::Move(-1),
         v if v == VK_DOWN.0 => Action::Move(1),
-        // Number row picks a candidate, the way every other IME does.
-        0x31..=0x39 if !shift && ((vk - 0x31) as usize) < ncands => {
-            Action::Pick((vk - 0x31) as usize)
-        }
         _ => match char_for_key(vk as u32, scan) {
             Some(c) => Action::CommitWith(c.to_string()),
             None => Action::Commit,
@@ -175,6 +185,16 @@ impl ITfKeyEventSink_Impl for KeyEventSink_Impl {
             }
             Action::CommitWith(tail) => session::commit(&self.sess, ctx, &tail),
             Action::Commit => session::commit(&self.sess, ctx, ""),
+            Action::Digit(d) => {
+                let deva = crate::engine::literal(d);
+                if composing {
+                    session::commit(&self.sess, ctx, &deva);
+                } else if !session::insert_literal(&self.sess, ctx, &deva) {
+                    // Control refused the edit; let the ASCII digit through
+                    // rather than swallowing the key.
+                    return Ok(BOOL(0));
+                }
+            }
         }
         Ok(BOOL(1))
     }

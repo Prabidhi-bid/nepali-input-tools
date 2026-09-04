@@ -23,8 +23,8 @@ use std::rc::{Rc, Weak};
 use windows::core::{implement, Interface, Ref, Result, BOOL};
 use windows::Win32::UI::TextServices::{
     ITfComposition, ITfCompositionSink, ITfCompositionSink_Impl, ITfContext, ITfContextComposition,
-    ITfInsertAtSelection, ITfRange, TF_AE_END, TF_ANCHOR_END, TF_IAS_QUERYONLY, TF_SELECTION,
-    TF_SELECTIONSTYLE,
+    ITfInsertAtSelection, ITfRange, TF_AE_END, TF_ANCHOR_END, TF_IAS_NOQUERY, TF_IAS_QUERYONLY,
+    TF_SELECTION, TF_SELECTIONSTYLE,
 };
 
 use crate::candwin::CandWindow;
@@ -177,6 +177,30 @@ pub fn cancel(sess: &SharedSession, ctx: &ITfContext) {
     finish(sess, ctx, &raw);
 }
 
+/// Insert `text` straight into the document with no composition.
+///
+/// For characters that need no conversion pass and no candidate list — a
+/// Devanagari digit typed between words, where there is no composition open to
+/// commit into and starting one just to end it immediately would flicker.
+pub fn insert_literal(sess: &SharedSession, ctx: &ITfContext, text: &str) -> bool {
+    let tid = sess.borrow().tid;
+    let text: Vec<u16> = text.encode_utf16().collect();
+    let r = editsession::run(ctx, tid, move |ec, ctx| {
+        let insert: ITfInsertAtSelection = ctx.cast()?;
+        let range = unsafe { insert.InsertTextAtSelection(ec, TF_IAS_NOQUERY, &text)? };
+        let end = unsafe { range.Clone()? };
+        unsafe { end.Collapse(ec, TF_ANCHOR_END)? };
+        set_selection(ec, ctx, end)
+    });
+    match r {
+        Ok(()) => true,
+        Err(e) => {
+            crate::debug(&format!("literal insert failed: {e}"));
+            false
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Document plumbing
 // ---------------------------------------------------------------------------
@@ -256,10 +280,15 @@ fn write_range(ec: u32, ctx: &ITfContext, range: &ITfRange, text: &str) -> Resul
 
     let end = unsafe { range.Clone()? };
     unsafe { end.Collapse(ec, TF_ANCHOR_END)? };
+    set_selection(ec, ctx, end)
+}
+
+/// Put the caret at `at`, consuming the range.
+fn set_selection(ec: u32, ctx: &ITfContext, at: ITfRange) -> Result<()> {
     // TF_SELECTION holds the range in a ManuallyDrop, so its reference is ours
     // to release once SetSelection has copied what it needs.
     let mut sel = TF_SELECTION {
-        range: ManuallyDrop::new(Some(end)),
+        range: ManuallyDrop::new(Some(at)),
         style: TF_SELECTIONSTYLE { ase: TF_AE_END, fInterimChar: BOOL(0) },
     };
     let r = unsafe { ctx.SetSelection(ec, std::slice::from_ref(&sel)) };

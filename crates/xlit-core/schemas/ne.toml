@@ -80,8 +80,19 @@ GY = "ज्ञ"
 "|"  = "।"
 "||" = "॥"
 
-# Devanagari digits are off by default (most users want ASCII digits).
-# Uncomment to type Nepali digits ०–९:
+# Devanagari digits ०–९. Typing 25 gives २५.
+#
+# In the Windows input method the number row does double duty: while a word is
+# being composed, 1–9 pick a candidate from the list, and only otherwise do they
+# produce digits. Delete this section to get ASCII digits back.
 [digits]
-# "0" = "०"
-# "1" = "१"
+"0" = "०"
+"1" = "१"
+"2" = "२"
+"3" = "३"
+"4" = "४"
+"5" = "५"
+"6" = "६"
+"7" = "७"
+"8" = "८"
+"9" = "९"
