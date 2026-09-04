@@ -6,11 +6,26 @@ Two ways to install the Windows TSF text service:
 - **`install.ps1` / `uninstall.ps1`** → plain PowerShell, no toolchain, for
   dev boxes and power users.
 
-Both do the same thing: **deregister any prior copy**, register the DLL
-(`regsvr32` → its `DllRegisterServer`), then add `ne-NP` + this TIP to the
-current user's language list (`Set-WinUserLanguageList`) so it shows in the
-taskbar / `Win+Space` switcher without a manual Settings visit. Uninstall
+Both do the same thing: build **x64 + x86** (`--target x86_64-` /
+`i686-pc-windows-msvc`), **deregister any prior copy**, register each DLL with
+the matching-bitness `regsvr32` (`DllRegisterServer`), then add `ne-NP` + this
+TIP to the current user's language list (`Set-WinUserLanguageList`) so it shows
+in the taskbar / `Win+Space` switcher without a manual Settings visit. Uninstall
 reverses both.
+
+**Why two DLLs:** a TSF text service is loaded into every process that takes
+text input; 32-bit apps load the 32-bit `xlit_tsf.dll` from the WOW64 registry
+view. Layout:
+
+| | 64-bit Windows | 32-bit Windows |
+|---|---|---|
+| x64 DLL | `{app}\xlit_tsf.dll` (System32 `regsvr32`) | — |
+| x86 DLL | `{app}\x86\xlit_tsf.dll` (SysWOW64 `regsvr32`) | `{app}\xlit_tsf.dll` (System32 `regsvr32`) |
+
+`rustup target add i686-pc-windows-msvc` and the x86 MSVC toolchain are needed
+for the 32-bit build; if it fails the scripts warn and produce an x64-only
+result (`build-setup.ps1 -SkipX86` / `install.ps1 -SkipX86` to force that).
+ARM64: x64 + x86 run under emulation; no native ARM64 build.
 
 ## Distributable: `Setup.exe` (Inno Setup)
 
@@ -27,12 +42,14 @@ PATH after this shell started; the script also checks Inno's registry install
 location and the usual folders).
 
 [`xlit-tsf.iss`](xlit-tsf.iss) installs to `%ProgramFiles%\Prabidhi.bid Input\`
-and, in `[Run]`: `regsvr32 /s /u` (clear prior state) → `regsvr32 /s` → a
+and, in `[Run]`, per bitness: `regsvr32 /s /u` (clear prior state) → `regsvr32
+/s` (System32 for the native DLL, SysWOW64 for the x86 one) → a
 `runascurrentuser` PowerShell step that adds the keyboard to the user's list →
 recycle `ctfmon`/`TextInputHost`. On a re-install, `[Code]` also unregisters the
-old copy and frees the hosts *before* `[Files]` overwrites the DLL (with
+old copies and frees the hosts *before* `[Files]` overwrites the DLLs (with
 `restartreplace` as the last-resort fallback for a still-locked file). Inno owns
 the Apps & features entry and file removal. Keep `AppId` stable across releases.
+`build-setup.ps1` passes `/DDllPathX64=` and (when built) `/DDllPathX86=`.
 
 ## Dev: `install.ps1`
 
@@ -42,11 +59,12 @@ powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\install
 
 What it does (elevated):
 
-1. `cargo build -p xlit-tsf --release` (skip with `-NoBuild`; `-Configuration debug` for a debug build).
-2. Copy `xlit_tsf.dll` + `uninstall.ps1` to `%ProgramFiles%\Prabidhi.bid Input\`.
-3. `regsvr32 /s /u` then `/s` the installed DLL — a clean deregister → register.
-   `DllRegisterServer` writes the COM CLSID keys and, via
-   `ITfInputProcessorProfileMgr::RegisterProfile`, the
+1. `cargo build -p xlit-tsf --release` for `x86_64-` and `i686-pc-windows-msvc`
+   (skip build with `-NoBuild`; `-SkipX86` for x64 only; `-Configuration debug`).
+2. Copy each DLL to its slot (see table above) + `uninstall.ps1` to the root.
+3. Per bitness: `regsvr32 /s /u` then `/s` (System32 `regsvr32` for the native
+   DLL, SysWOW64 for the x86 one). `DllRegisterServer` writes the COM CLSID keys
+   and, via `ITfInputProcessorProfileMgr::RegisterProfile`, the
    `HKLM\SOFTWARE\Microsoft\CTF\TIP` profile (enabled-by-default) + the
    `TIPCAP_*` categories.
 4. `Set-WinUserLanguageList` — add `ne-NP` + this TIP to your language list.
@@ -69,7 +87,7 @@ Apps & features → *Input by Prabidhi.bid* → Uninstall, or:
 powershell -ExecutionPolicy Bypass -File "%ProgramFiles%\Prabidhi.bid Input\uninstall.ps1"
 ```
 
-Removes this TIP from your language list, `regsvr32 /s /u` (→
+Removes this TIP from your language list, `regsvr32 /s /u` for each bitness (→
 `DllUnregisterServer` removes the COM + CTF\TIP keys), deletes the install
 folder, removes the Apps & features entry. Files still in use are renamed aside
 and swept after the script exits / on next sign-out.
@@ -111,7 +129,8 @@ more in compatibility and support than they cost an analyst.
   the registration but must add the keyboard themselves (Settings → Language →
   Nepali → Keyboards). An `ActiveSetup` stub (per-user command on first logon)
   is the fix.
-- **x64 only.** No x86 / ARM64 payload yet, so 32-bit apps won't load the TIP.
+- **No native ARM64 payload.** The x64 + x86 DLLs run under emulation on ARM64
+  Windows; native ARM64 processes there won't load the TIP.
 - `COMLESS` category is deliberately not registered (classic COM server only) —
   it was hiding the TIP from the modern switcher.
 - A signed MSI (deferred no-impersonate custom actions + Active Setup) is the

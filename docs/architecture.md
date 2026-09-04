@@ -147,11 +147,11 @@ the engine to `commit` for learning.
    - **M6.4**: language-bar icon, x86 build, Chrome/Electron/UWP fixes, toggle key.
    - **M6.5** *(initial)*: `installer/` — `build-setup.ps1` produces an Inno
      Setup `Setup.exe`; `install.ps1` / `uninstall.ps1` are the toolchain-free
-     path. Both deregister→register via `regsvr32` and add the keyboard to the
-     user's list with `Set-WinUserLanguageList` so it lands in the switcher.
-     Release DLL is stripped with trace behind a cargo feature. TODO: code
-     signing, a signed MSI (deferred no-impersonate CAs, Active Setup for
-     other users), x86/ARM64 payloads.
+     path. Both build **x64 + x86** (`--target x86_64-` / `i686-pc-windows-msvc`),
+     lay them out as `{app}\xlit_tsf.dll` + `{app}\x86\xlit_tsf.dll`,
+     deregister→register each with the matching-bitness `regsvr32`, and add the
+     keyboard with `Set-WinUserLanguageList`. Release DLL is stripped with trace
+     behind a cargo feature. TODO: code signing, a signed MSI, native ARM64.
 7. **M7 — ONNX OOV fallback**: `training/` pipeline (Dakshina `ne` +
    Aksharantar `nep` → small char transformer → int8 ONNX), lazy-loaded `Ranker`.
 8. **M8 — packaging**: signed installers, per-distro packages, language packs.

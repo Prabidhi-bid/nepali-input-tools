@@ -3,27 +3,33 @@
     Build "Input-by-Prabidhi.bid-<ver>-setup.exe" with Inno Setup.
 
 .DESCRIPTION
-    1. cargo build -p xlit-tsf --release   (no `trace` feature -> no DebugView
-       strings in the shipped DLL)
+    1. cargo build -p xlit-tsf --release for x86_64- AND i686-pc-windows-msvc
+       (a TSF DLL loads into every process, so 64-bit Windows needs both).
+       An i686 build failure is a warning, not fatal - the Setup.exe is then
+       x64-only.
     2. locate ISCC.exe
     3. iscc xlit-tsf.iss -> setup.exe next to this script
 
-    One-time prerequisite:
+    One-time prerequisites:
         winget install JRSoftware.InnoSetup
+        rustup target add i686-pc-windows-msvc    (the script also tries this)
+    Building i686 also needs the x86 MSVC toolchain (any full VS / Build Tools
+    install has it).
 
 .PARAMETER Version
     Version stamped into the installer (default 0.1.0).
 
 .PARAMETER Configuration
-    release (default) or debug - which target\<cfg>\xlit_tsf.dll to embed.
+    release (default) or debug.
+
+.PARAMETER SkipX86
+    Build x64 only (the Setup.exe won't serve 32-bit apps).
 
 .PARAMETER Password
-    If given, encrypt the installer's embedded payload (Inno `Encryption`).
-    Speed-bump only - see installer/README.md.
+    Encrypt the installer's embedded payload (Inno Encryption). Speed-bump only.
 
 .PARAMETER Iscc
-    Full path to ISCC.exe (or its folder) when auto-detection fails, e.g. when
-    Inno Setup was added to PATH after this shell started.
+    Full path to ISCC.exe (or its folder) if auto-detection fails.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\build-setup.ps1
@@ -32,28 +38,51 @@
 param(
     [string]$Version = '0.1.0',
     [ValidateSet('release', 'debug')][string]$Configuration = 'release',
+    [switch]$SkipX86,
     [string]$Password,
-    [string]$Iscc                       # explicit path to ISCC.exe (or its folder)
+    [string]$Iscc
 )
 $ErrorActionPreference = 'Stop'
 
+$here     = $PSScriptRoot
+$repoRoot = (Resolve-Path (Join-Path $here '..\..\..')).Path
+
+function Free-Locked([string]$path) {
+    if (-not (Test-Path $path)) { return }
+    try { Remove-Item $path -Force -ErrorAction Stop }
+    catch {
+        Rename-Item $path "$path.$(Get-Date -Format yyyyMMddHHmmss).old" -Force
+        Write-Host "    ($(Split-Path $path -Leaf) in use - renamed aside)" -ForegroundColor DarkGray
+    }
+}
+
+function Build-Target([string]$triple) {
+    $dll = Join-Path $repoRoot "target\$triple\$Configuration\xlit_tsf.dll"
+    Get-ChildItem (Split-Path $dll) -Filter 'xlit_tsf.dll.*.old' -ErrorAction SilentlyContinue |
+        ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
+    Free-Locked $dll
+    Push-Location $repoRoot
+    try {
+        & rustup target add $triple *> $null
+        $flags = @('build', '-p', 'xlit-tsf', '--target', $triple)
+        if ($Configuration -eq 'release') { $flags += '--release' }
+        & cargo @flags
+        if ($LASTEXITCODE) { throw "cargo build failed for $triple ($LASTEXITCODE)" }
+    } finally { Pop-Location }
+    if (-not (Test-Path $dll)) { throw "expected $dll" }
+    $dll
+}
+
 function Resolve-Iscc {
     param([string]$Explicit)
-
     if ($Explicit) {
         if (Test-Path $Explicit -PathType Leaf) { return (Resolve-Path $Explicit).Path }
         $c = Join-Path $Explicit 'ISCC.exe'
         if (Test-Path $c -PathType Leaf) { return $c }
         throw "ISCC.exe not found at -Iscc '$Explicit'"
     }
-
-    # 1. this session's PATH
-    $g = Get-Command 'ISCC.exe' -CommandType Application -ErrorAction SilentlyContinue |
-        Select-Object -First 1
+    $g = Get-Command 'ISCC.exe' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($g) { return $g.Source }
-
-    # 2. gather candidate folders: persisted PATH (catches a PATH edit made
-    #    after this shell started), Inno's registry install location, defaults
     $dirs = New-Object System.Collections.Generic.List[string]
     foreach ($scope in 'Machine', 'User') {
         $p = [Environment]::GetEnvironmentVariable('Path', $scope)
@@ -71,13 +100,11 @@ function Resolve-Iscc {
         } catch {}
     }
     $pf86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
-    foreach ($d in @(
-            "$pf86\Inno Setup 6", "$env:ProgramFiles\Inno Setup 6",
+    foreach ($d in @("$pf86\Inno Setup 6", "$env:ProgramFiles\Inno Setup 6",
             "$env:LOCALAPPDATA\Programs\Inno Setup 6",
             "$pf86\Inno Setup 5", "$env:ProgramFiles\Inno Setup 5")) {
         $dirs.Add($d)
     }
-
     foreach ($d in ($dirs | Where-Object { $_ } | Select-Object -Unique)) {
         $c = Join-Path ($d.Trim().TrimEnd('\')) 'ISCC.exe'
         if (Test-Path $c -PathType Leaf) { return $c }
@@ -85,40 +112,22 @@ function Resolve-Iscc {
     return $null
 }
 
-$here     = $PSScriptRoot
-$repoRoot = (Resolve-Path (Join-Path $here '..\..\..')).Path
-$dll      = Join-Path $repoRoot "target\$Configuration\xlit_tsf.dll"
+Write-Host "==> building x64 (x86_64-pc-windows-msvc, $Configuration)" -ForegroundColor Cyan
+$dllX64 = Build-Target 'x86_64-pc-windows-msvc'
 
-# If the service is registered, Windows maps xlit_tsf.dll into ctfmon / the
-# Claude app / consoles and cargo can't overwrite it ("Access is denied").
-# Renaming a mapped DLL aside is allowed; cargo then writes a fresh one. The
-# stale copy unloads on the next sign-out. (No elevation needed - target\ is
-# user-writable. build-setup.ps1 only builds; the Setup.exe registers later.)
-Get-ChildItem (Split-Path $dll) -Filter 'xlit_tsf.dll.*.old' -ErrorAction SilentlyContinue |
-    ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
-if (Test-Path $dll) {
+$dllX86 = $null
+if ($SkipX86) {
+    Write-Warning 'SkipX86: the installer will not serve 32-bit apps.'
+} else {
+    Write-Host "==> building x86 (i686-pc-windows-msvc, $Configuration)" -ForegroundColor Cyan
     try {
-        Remove-Item $dll -Force -ErrorAction Stop
+        $dllX86 = Build-Target 'i686-pc-windows-msvc'
     } catch {
-        $aside = "$dll.$(Get-Date -Format yyyyMMddHHmmss).old"
-        Rename-Item $dll $aside -Force
-        Write-Host "    ($(Split-Path $dll -Leaf) in use - renamed to $(Split-Path $aside -Leaf))" -ForegroundColor DarkGray
+        Write-Warning "x86 build failed ($_). Continuing x64-only - install the x86 MSVC toolchain to fix."
+        $dllX86 = $null
     }
 }
 
-Write-Host "==> cargo build -p xlit-tsf ($Configuration, no trace)" -ForegroundColor Cyan
-Push-Location $repoRoot
-try {
-    $flags = @('build', '-p', 'xlit-tsf')
-    if ($Configuration -eq 'release') { $flags += '--release' }
-    & cargo @flags
-    if ($LASTEXITCODE) { throw "cargo build failed ($LASTEXITCODE)" }
-} finally {
-    Pop-Location
-}
-if (-not (Test-Path $dll)) { throw "DLL not found: $dll" }
-
-# locate the Inno Setup compiler
 $iscc = Resolve-Iscc -Explicit $Iscc
 if (-not $iscc) {
     throw @'
@@ -126,13 +135,12 @@ Inno Setup (ISCC.exe) not found. Either install it:
     winget install JRSoftware.InnoSetup
 or point at it directly:
     build-setup.ps1 -Iscc "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-If you just added Inno Setup to PATH, open a NEW terminal (this one has the
-old PATH) or use -Iscc.
 '@
 }
 Write-Host "using $iscc" -ForegroundColor DarkGray
 
-$isccArgs = @("/DDllPath=$dll", "/DAppVersion=$Version")
+$isccArgs = @("/DDllPathX64=$dllX64", "/DAppVersion=$Version")
+if ($dllX86)  { $isccArgs += "/DDllPathX86=$dllX86" }
 if ($Password) { $isccArgs += "/DSetupPassword=$Password" }
 $isccArgs += (Join-Path $here 'xlit-tsf.iss')
 
@@ -142,5 +150,5 @@ if ($LASTEXITCODE) { throw "iscc failed ($LASTEXITCODE)" }
 
 $out = Join-Path $here "Input-by-Prabidhi.bid-$Version-setup.exe"
 Write-Host ''
-Write-Host "built $out" -ForegroundColor Green
+Write-Host ("built {0}  ({1})" -f $out, $(if ($dllX86) { 'x64 + x86' } else { 'x64 only' })) -ForegroundColor Green
 Write-Host 'Sign it before distributing:  signtool sign /fd sha256 /a /tr http://timestamp.digicert.com /td sha256 "<setup.exe>"'

@@ -56,10 +56,19 @@ try {
         }
     } catch {}
 
-    $dll = Join-Path $InstallDir 'xlit_tsf.dll'
-    if (Test-Path $dll) {
-        Write-Host "==> regsvr32 /s /u xlit_tsf.dll" -ForegroundColor Cyan
-        & regsvr32.exe /s /u $dll
+    # deregister both bitnesses: root DLL with native regsvr32, x86\ DLL (if
+    # present, 64-bit OS layout) with the 32-bit regsvr32
+    $native = Join-Path $env:windir 'System32\regsvr32.exe'
+    $wow    = Join-Path $env:windir 'SysWOW64\regsvr32.exe'
+    $rootDll = Join-Path $InstallDir 'xlit_tsf.dll'
+    $x86Dll  = Join-Path $InstallDir 'x86\xlit_tsf.dll'
+    if (Test-Path $rootDll) {
+        Write-Host "==> regsvr32 /s /u (native)" -ForegroundColor Cyan
+        & $native /s /u $rootDll
+    }
+    if ((Test-Path $x86Dll) -and (Test-Path $wow)) {
+        Write-Host "==> regsvr32 /s /u (x86)" -ForegroundColor Cyan
+        & $wow /s /u $x86Dll
     }
     foreach ($p in $HostProcs) { Stop-Process -Name $p -Force -ErrorAction SilentlyContinue }
     Start-Sleep -Milliseconds 500

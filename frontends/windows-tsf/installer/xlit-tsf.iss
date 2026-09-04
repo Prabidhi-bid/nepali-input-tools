@@ -1,22 +1,24 @@
 ; Inno Setup 6.3+ script for "Input by Prabidhi.bid" (Windows TSF text service).
 ;
-; Build via installer\build-setup.ps1, or directly:
-;   iscc /DDllPath="..\..\..\target\release\xlit_tsf.dll" [/DAppVersion=0.1.0] ^
-;        [/DSetupPassword=<pw>] xlit-tsf.iss
+; A TSF text service loads into every text-input process, so on 64-bit Windows
+; you ship BOTH a 64-bit and a 32-bit xlit_tsf.dll (32-bit apps load the 32-bit
+; one from the WOW64 registry view). Layout:
+;   64-bit OS:  {app}\xlit_tsf.dll        (x64, registered with System32\regsvr32)
+;               {app}\x86\xlit_tsf.dll    (x86, registered with SysWOW64\regsvr32)
+;   32-bit OS:  {app}\xlit_tsf.dll        (x86, registered with System32\regsvr32)
 ;
-; Install flow (elevated via PrivilegesRequired=admin):
-;   1. copy xlit_tsf.dll to {app}
-;   2. regsvr32 /s  -> DllRegisterServer writes the COM CLSID keys and, via
-;      ITfInputProcessorProfileMgr::RegisterProfile, the HKLM\SOFTWARE\Microsoft
-;      \CTF\TIP profile (enabled-by-default) + the TIPCAP_* categories
-;   3. as the *current* user (runascurrentuser): add "ne-NP" + this TIP to the
-;      user's language list via Set-WinUserLanguageList, so it shows up in the
-;      taskbar / Win+Space switcher without a manual Settings visit
-;   4. recycle ctfmon / TextInputHost so the switcher refreshes
-; Uninstall reverses 3 -> 2, then Inno removes the files.
+; Build via installer\build-setup.ps1, or directly:
+;   iscc /DDllPathX64="...\x86_64-pc-windows-msvc\release\xlit_tsf.dll" ^
+;        [/DDllPathX86="...\i686-pc-windows-msvc\release\xlit_tsf.dll"] ^
+;        [/DAppVersion=0.1.0] [/DSetupPassword=<pw>] xlit-tsf.iss
+;
+; Each regsvr32 runs DllRegisterServer -> COM CLSID keys +
+; ITfInputProcessorProfileMgr::RegisterProfile (enabled-by-default) +
+; the TIPCAP_* categories. A runascurrentuser PowerShell step then adds
+; ne-NP + this TIP to the user's language list so it shows in the switcher.
 
-#ifndef DllPath
-  #error Pass /DDllPath=<full path to xlit_tsf.dll>
+#ifndef DllPathX64
+  #error Pass /DDllPathX64=<full path to the x64 xlit_tsf.dll>
 #endif
 #ifndef AppVersion
   #define AppVersion "0.1.0"
@@ -24,7 +26,6 @@
 
 #define AppName "Input by Prabidhi.bid"
 #define AppPublisher "Prabidhi.bid"
-#define DllName "xlit_tsf.dll"
 
 [Setup]
 ; keep this GUID stable across releases (drives upgrade + uninstall)
@@ -37,8 +38,9 @@ DefaultDirName={autopf}\Prabidhi.bid Input
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 UninstallDisplayName={#AppName}
-UninstallDisplayIcon={app}\{#DllName}
-ArchitecturesAllowed=x64compatible
+UninstallDisplayIcon={app}\xlit_tsf.dll
+; run on x86, x64 and arm64 (x86 emulation); use 64-bit dirs where available
+ArchitecturesAllowed=x86compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 PrivilegesRequired=admin
@@ -48,7 +50,6 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 
-; --- optional: encrypt the embedded payload (speed-bump against innounp/7z) ---
 #ifdef SetupPassword
 Encryption=yes
 Password={#SetupPassword}
@@ -63,17 +64,34 @@ Password={#SetupPassword}
 ; SignedUninstaller=yes
 
 [Files]
-Source: "{#DllPath}"; DestDir: "{app}"; Flags: ignoreversion 64bit restartreplace uninsrestartdelete
+; x64 DLL -> {app} (64-bit install mode only)
+Source: "{#DllPathX64}"; DestDir: "{app}"; DestName: "xlit_tsf.dll"; \
+  Check: Is64; Flags: ignoreversion restartreplace uninsrestartdelete 64bit
+#ifdef DllPathX86
+; x86 DLL -> {app}\x86 on 64-bit Windows, {app} on 32-bit Windows
+Source: "{#DllPathX86}"; DestDir: "{app}\x86"; DestName: "xlit_tsf.dll"; \
+  Check: Is64; Flags: ignoreversion restartreplace uninsrestartdelete 32bit
+Source: "{#DllPathX86}"; DestDir: "{app}"; DestName: "xlit_tsf.dll"; \
+  Check: Is32; Flags: ignoreversion restartreplace uninsrestartdelete 32bit
+#endif
 
 [Run]
-; deregister any prior registration first, then register clean. On a fresh
-; install the /u is a harmless no-op; on a re-install it clears stale state
-; (old path, the removed COMLESS category, a leftover rebuild-tsf.ps1 reg).
-Filename: "{sys}\regsvr32.exe"; Parameters: "/s /u ""{app}\{#DllName}"""; \
+; ----- deregister any prior copy (no-op on a fresh install) -----
+Filename: "{sys}\regsvr32.exe"; Parameters: "/s /u ""{app}\xlit_tsf.dll"""; \
   Flags: runhidden waituntilterminated
-Filename: "{sys}\regsvr32.exe"; Parameters: "/s ""{app}\{#DllName}"""; \
-  StatusMsg: "Registering the input method..."; \
-  Flags: runhidden waituntilterminated
+#ifdef DllPathX86
+Filename: "{syswow64}\regsvr32.exe"; Parameters: "/s /u ""{app}\x86\xlit_tsf.dll"""; \
+  Check: Is64; Flags: runhidden waituntilterminated
+#endif
+; ----- register -----
+Filename: "{sys}\regsvr32.exe"; Parameters: "/s ""{app}\xlit_tsf.dll"""; \
+  StatusMsg: "Registering the input method..."; Flags: runhidden waituntilterminated
+#ifdef DllPathX86
+Filename: "{syswow64}\regsvr32.exe"; Parameters: "/s ""{app}\x86\xlit_tsf.dll"""; \
+  StatusMsg: "Registering the input method (32-bit)..."; \
+  Check: Is64; Flags: runhidden waituntilterminated
+#endif
+; ----- add the keyboard to the user's language list -----
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{tmp}\ne-kbd-add.ps1"""; \
   StatusMsg: "Adding the Nepali keyboard to your language list..."; \
@@ -83,14 +101,28 @@ Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{tmp}\ne-kbd-remove.ps1"""; \
   RunOnceId: "RemoveNeKeyboard"; Flags: runascurrentuser runhidden waituntilterminated
-Filename: "{sys}\regsvr32.exe"; Parameters: "/s /u ""{app}\{#DllName}"""; \
-  RunOnceId: "UnregisterXlitTsf"; Flags: runhidden waituntilterminated
+Filename: "{sys}\regsvr32.exe"; Parameters: "/s /u ""{app}\xlit_tsf.dll"""; \
+  RunOnceId: "UnregNative"; Flags: runhidden waituntilterminated
+#ifdef DllPathX86
+Filename: "{syswow64}\regsvr32.exe"; Parameters: "/s /u ""{app}\x86\xlit_tsf.dll"""; \
+  RunOnceId: "UnregX86"; Check: Is64; Flags: runhidden waituntilterminated
+#endif
 
 [Code]
 const
   NeTag = 'ne-NP';
   // langid : CLSID + profile GUID -- must match register.rs / lib.rs
   NeTip = '0461:{438E43E4-3800-4AB1-82A6-A2E831ABF107}{4BE59555-69DD-48CA-8BC8-AB450205A567}';
+
+function Is64: Boolean;
+begin
+  Result := Is64BitInstallMode;
+end;
+
+function Is32: Boolean;
+begin
+  Result := not Is64BitInstallMode;
+end;
 
 { PowerShell that adds ne-NP + this TIP to the running user's language list. }
 function AddScript: String;
@@ -136,20 +168,36 @@ begin
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
-{ Re-install case: if an older copy is already registered, unregister it and
-  free the input hosts *before* [Files] tries to overwrite the locked DLL. }
+{ Re-install case: unregister an older copy (both bitnesses) and free the input
+  hosts *before* [Files] tries to overwrite the locked DLL. }
 procedure PreUnregisterIfInstalled;
 var
-  Dll: String;
+  RootDll, X86Dll: String;
   ResultCode: Integer;
 begin
-  Dll := ExpandConstant('{app}\{#DllName}');
-  if FileExists(Dll) then
-  begin
-    Exec(ExpandConstant('{sys}\regsvr32.exe'), '/s /u "' + Dll + '"',
+  RootDll := ExpandConstant('{app}\xlit_tsf.dll');
+  X86Dll  := ExpandConstant('{app}\x86\xlit_tsf.dll');
+  if FileExists(RootDll) then
+    Exec(ExpandConstant('{sys}\regsvr32.exe'), '/s /u "' + RootDll + '"',
       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if Is64BitInstallMode and FileExists(X86Dll) then
+    Exec(ExpandConstant('{syswow64}\regsvr32.exe'), '/s /u "' + X86Dll + '"',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if FileExists(RootDll) or FileExists(X86Dll) then
     RecycleInputHosts;
+end;
+
+function InitializeSetup: Boolean;
+begin
+  Result := True;
+#ifndef DllPathX86
+  if not Is64BitInstallMode then
+  begin
+    MsgBox('This build has no 32-bit payload and cannot install on 32-bit Windows.',
+      mbCriticalError, MB_OK);
+    Result := False;
   end;
+#endif
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

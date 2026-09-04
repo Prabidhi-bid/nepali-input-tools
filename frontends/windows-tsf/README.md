@@ -107,8 +107,13 @@ those `.old` files on the next run.
 
 ## Notes
 
-- **x64 only** right now. 32-bit apps won't load it until we also ship an x86
-  build.
+- **x86 + x64.** A TSF DLL loads into every text-input process, so 64-bit
+  Windows needs both a 64-bit and a 32-bit `xlit_tsf.dll` (32-bit apps load the
+  32-bit one via the WOW64 registry view). The installer builds and registers
+  both — `cargo build -p xlit-tsf --release --target x86_64-pc-windows-msvc` and
+  `--target i686-pc-windows-msvc` (`rustup target add i686-pc-windows-msvc`; the
+  i686 build also needs the x86 MSVC toolchain). ARM64: the x64 + x86 payloads
+  run under emulation; no native ARM64 build yet.
 - The DLL links `xlit-core` + the compiled-in seed dictionary directly
   (~0.4 MB). It will move to talking to `xlit-daemon` once M3 lands, so the
   engine data is loaded once instead of per-process.

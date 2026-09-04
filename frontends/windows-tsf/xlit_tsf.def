@@ -1,3 +1,6 @@
+; Arch-neutral: the MSVC linker matches these undecorated names to the x86
+; stdcall symbols (_Name@N) as well as the x64 ones, so one .def serves both
+; x86_64- and i686-pc-windows-msvc. DllMain is intentionally not exported.
 LIBRARY xlit_tsf
 EXPORTS
     DllGetClassObject   PRIVATE
