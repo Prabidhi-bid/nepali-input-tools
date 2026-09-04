@@ -26,7 +26,8 @@ use windows::Win32::Graphics::Gdi::{
     BeginPaint, CreateFontW, CreateSolidBrush, DeleteObject, EndPaint, FillRect, InvalidateRect,
     MonitorFromPoint, RoundRect, SelectObject, SetBkMode, SetTextColor, TextOutW, CLEARTYPE_QUALITY,
     CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH, FF_DONTCARE, FW_SEMIBOLD, HGDIOBJ,
-    MONITOR_DEFAULTTOPRIMARY, OUT_DEFAULT_PRECIS, PAINTSTRUCT, TRANSPARENT,
+    MONITOR_DEFAULTTONULL, MONITOR_DEFAULTTOPRIMARY, MONITOR_FROM_FLAGS, OUT_DEFAULT_PRECIS,
+    PAINTSTRUCT, TRANSPARENT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetCursorPos, GetWindowRect, LoadCursorW,
@@ -171,23 +172,53 @@ impl Drop for StatusBar {
 
 const POS_KEY: &str = r"Software\xlit";
 
+/// Bottom-right of the work area, clear of the taskbar.
+fn default_position() -> (i32, i32) {
+    match work_area() {
+        Some(w) => ((w.right - BAR_W - 24).max(w.left), (w.bottom - BAR_H - 24).max(w.top)),
+        None => (600, 600),
+    }
+}
+
+/// Where to put the bar, honouring a remembered position only if it would
+/// actually land on screen.
+///
+/// The check is not paranoia. The position is saved by whichever application
+/// the user dragged the bar in, and read back by every other one — and those
+/// processes do not agree about coordinates, because a DPI-aware host sees
+/// physical pixels while a DPI-unaware one sees scaled ones. A position saved
+/// at the bottom-right of a 1920x1080 desktop reads as 300px off the edge of
+/// the same desktop seen as 1536x912, and the bar vanishes with no way to drag
+/// it back. Falling back to the default keeps it recoverable.
 fn saved_position() -> (i32, i32) {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     if let Ok(k) = hkcu.open_subkey(POS_KEY) {
         if let (Ok(x), Ok(y)) = (k.get_value::<u32, _>("BarX"), k.get_value::<u32, _>("BarY")) {
-            return (x as i32, y as i32);
+            let (x, y) = (x as i32, y as i32);
+            if on_screen(x, y) {
+                return (x, y);
+            }
+            crate::debug("saved bar position is off screen; using the default");
         }
     }
-    // First run: bottom-right, clear of the taskbar.
-    match work_area() {
-        Some(w) => (w.right - BAR_W - 24, w.bottom - BAR_H - 24),
-        None => (600, 600),
+    default_position()
+}
+
+/// Is a bar at this origin wholly within some monitor's work area?
+fn on_screen(x: i32, y: i32) -> bool {
+    match work_area_at(x, y) {
+        Some(w) => x >= w.left && y >= w.top && x + BAR_W <= w.right && y + BAR_H <= w.bottom,
+        None => false,
     }
 }
 
 fn save_position(x: i32, y: i32) {
+    if !on_screen(x, y) {
+        // Refuse to remember somewhere it cannot be reached from.
+        return;
+    }
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
@@ -198,9 +229,22 @@ fn save_position(x: i32, y: i32) {
 }
 
 fn work_area() -> Option<RECT> {
+    work_area_of(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY)
+}
+
+/// Work area of the monitor containing a point, or `None` if it is on none of
+/// them — which is the case we care about when validating a saved position.
+fn work_area_at(x: i32, y: i32) -> Option<RECT> {
+    work_area_of(POINT { x, y }, MONITOR_DEFAULTTONULL)
+}
+
+fn work_area_of(pt: POINT, flags: MONITOR_FROM_FLAGS) -> Option<RECT> {
     use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITORINFO};
     unsafe {
-        let mon = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
+        let mon = MonitorFromPoint(pt, flags);
+        if mon.is_invalid() {
+            return None;
+        }
         let mut info = MONITORINFO {
             cbSize: std::mem::size_of::<MONITORINFO>() as u32,
             ..Default::default()
