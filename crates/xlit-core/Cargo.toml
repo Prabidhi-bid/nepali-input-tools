@@ -1,0 +1,10 @@
+[package]
+name = "xlit-core"
+version = "0.1.0"
+description = "Portable transliteration engine: Latin -> native script, ranked candidates."
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"

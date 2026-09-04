@@ -1,0 +1,13 @@
+[package]
+name = "xlit-cli"
+version = "0.1.0"
+description = "Dev REPL for the transliteration engine: Latin in, ranked candidates out."
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "xlit"
+path = "src/main.rs"
+
+[dependencies]
+xlit-core = { path = "../xlit-core" }

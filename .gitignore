@@ -1,0 +1,19 @@
+/target
+**/*.rs.bk
+
+# engine data artifacts
+*.fst
+*.bin
+*.onnx
+*.arpa
+*.klm
+
+# python (training/)
+__pycache__/
+.venv/
+*.pyc
+
+# editors / os
+.DS_Store
+.idea/
+.vscode/

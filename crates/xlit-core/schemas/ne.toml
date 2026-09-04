@@ -1,0 +1,87 @@
+# Nepali / Devanagari transliteration schema (ITRANS-flavoured).
+# Keys are matched greedily, longest first. Case-sensitive by design.
+# The engine inserts `meta.virama` automatically between adjacent consonants,
+# so most conjuncts (क्ष, ज्ञ, स्त्र, त्र, ...) fall out for free.
+
+[meta]
+name = "Nepali"
+script = "Devanagari"
+inherent_vowel = "a"
+virama = "्"
+
+[vowels]
+a     = { independent = "अ", matra = "" }
+aa    = { independent = "आ", matra = "ा" }
+A     = { independent = "आ", matra = "ा" }
+i     = { independent = "इ", matra = "ि" }
+ii    = { independent = "ई", matra = "ी" }
+I     = { independent = "ई", matra = "ी" }
+ee    = { independent = "ई", matra = "ी" }
+u     = { independent = "उ", matra = "ु" }
+uu    = { independent = "ऊ", matra = "ू" }
+U     = { independent = "ऊ", matra = "ू" }
+oo    = { independent = "ऊ", matra = "ू" }
+e     = { independent = "ए", matra = "े" }
+ai    = { independent = "ऐ", matra = "ै" }
+o     = { independent = "ओ", matra = "ो" }
+au    = { independent = "औ", matra = "ौ" }
+RRi   = { independent = "ऋ", matra = "ृ" }
+"R^i" = { independent = "ऋ", matra = "ृ" }
+
+[consonants]
+k = "क"
+kh = "ख"
+g = "ग"
+gh = "घ"
+"~N" = "ङ"
+ch = "च"
+c = "च"
+Ch = "छ"
+chh = "छ"
+j = "ज"
+jh = "झ"
+"~n" = "ञ"
+T = "ट"
+Th = "ठ"
+D = "ड"
+Dh = "ढ"
+N = "ण"
+t = "त"
+th = "थ"
+d = "द"
+dh = "ध"
+n = "न"
+p = "प"
+ph = "फ"
+f = "फ"
+b = "ब"
+bh = "भ"
+m = "म"
+y = "य"
+r = "र"
+l = "ल"
+v = "व"
+w = "व"
+sh = "श"
+Sh = "ष"
+S = "ष"
+s = "स"
+h = "ह"
+z = "ज"
+x = "क्ष"
+GY = "ज्ञ"
+
+[signs]
+"M"  = "ं"
+".n" = "ं"
+".m" = "ं"
+"H"  = "ः"
+"~"  = "ँ"
+"|"  = "।"
+"||" = "॥"
+
+# Devanagari digits are off by default (most users want ASCII digits).
+# Uncomment to type Nepali digits ०–९:
+[digits]
+# "0" = "०"
+# "1" = "१"
