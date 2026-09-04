@@ -60,6 +60,33 @@ function Test-Admin {
     ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+# The language list is per-user and, in practice, does not reliably stick when
+# written from the elevated child process - the keyboard silently fails to
+# appear in the switcher. So this runs in the *original* (unelevated) session,
+# after the elevated half has registered the profile it refers to.
+function Add-NeKeyboard {
+    try {
+        $list = Get-WinUserLanguageList
+        if (-not ($list | Where-Object { $_.LanguageTag -eq 'ne-NP' })) { $list.Add('ne-NP') }
+        $ne = $list | Where-Object { $_.LanguageTag -eq 'ne-NP' }
+        if ($ne -and ($ne.InputMethodTips -notcontains $Tip)) { $ne.InputMethodTips.Add($Tip) }
+        Set-WinUserLanguageList $list -Force
+
+        # Windows discards a TIP it cannot resolve to a registered profile and
+        # reports success anyway, so read it back rather than trust the call.
+        $after = Get-WinUserLanguageList | Where-Object { $_.LanguageTag -eq 'ne-NP' }
+        if ($after -and ($after.InputMethodTips -contains $Tip)) {
+            Write-Host 'Keyboard added to your language list.' -ForegroundColor Green
+            return $true
+        }
+        Write-Warning "Windows did not keep the keyboard in your language list. Add 'Input by Prabidhi.bid' from Settings > Time & Language > Language & region > Nepali > Language options > Keyboards."
+        return $false
+    } catch {
+        Write-Warning "couldn't add the keyboard ($_). Add it from Settings > Language > Nepali > Keyboards."
+        return $false
+    }
+}
+
 # --- ask for elevation first --------------------------------------------------
 if (-not (Test-Admin)) {
     Write-Host 'Requesting administrator elevation...' -ForegroundColor Cyan
@@ -67,8 +94,14 @@ if (-not (Test-Admin)) {
         '-Elevated', '-Configuration', $Configuration)
     if ($NoBuild) { $argv += '-NoBuild' }
     if ($SkipX86) { $argv += '-SkipX86' }
-    try { Start-Process powershell.exe -ArgumentList $argv -Verb RunAs }
+    try { $proc = Start-Process powershell.exe -ArgumentList $argv -Verb RunAs -Wait -PassThru }
     catch { Write-Host 'Elevation was cancelled or denied.' -ForegroundColor Red; exit 1 }
+    if ($proc.ExitCode) {
+        Write-Host "The elevated step failed ($($proc.ExitCode)); not touching your language list." -ForegroundColor Red
+        exit $proc.ExitCode
+    }
+    Add-NeKeyboard | Out-Null
+    foreach ($p in $HostProcs) { Stop-Process -Name $p -Force -ErrorAction SilentlyContinue }
     exit 0
 }
 
@@ -96,6 +129,20 @@ function Add-RustTargets {
     $ErrorActionPreference = 'Continue'
     try { rustup target add x86_64-pc-windows-msvc i686-pc-windows-msvc } catch {}
     $ErrorActionPreference = $old
+}
+
+# regsvr32.exe is a GUI-subsystem program, so PowerShell's call operator does
+# NOT wait for it: "& regsvr32 /s foo.dll" returns immediately, $LASTEXITCODE is
+# whatever it was before, and the next line runs while registration is still in
+# flight. That is how a deregister could race a register and leave no TSF
+# profile at all. Start-Process -Wait is the only way to sequence these.
+function Invoke-Regsvr32 {
+    param([string]$Exe, [string]$Dll, [switch]$Unregister)
+    $argv = @('/s')
+    if ($Unregister) { $argv += '/u' }
+    $argv += "`"$Dll`""
+    $p = Start-Process -FilePath $Exe -ArgumentList $argv -Wait -PassThru -WindowStyle Hidden
+    return $p.ExitCode
 }
 
 function Clear-LockedFile([string]$path) {
@@ -132,7 +179,7 @@ function Resolve-Source($t) {
     if (-not $NoBuild) {
         if (-not $repoRoot) { throw "not in the repo tree - re-run with -NoBuild and a bundled DLL" }
         Write-Host "==> cargo build -p xlit-tsf --target $($t.Triple) ($Configuration)" -ForegroundColor Cyan
-        & $t.Regsvr /s /u $built            # best-effort deregister of a prior in-tree reg
+        Invoke-Regsvr32 -Exe $t.Regsvr -Dll $built -Unregister | Out-Null   # prior in-tree reg
         Clear-LockedFile $built
         Push-Location $repoRoot
         try {
@@ -193,7 +240,7 @@ try {
     if (-not $installed) { throw 'nothing installed' }
 
     foreach ($t in $installed) {
-        & $t.Regsvr /s /u $t.Dest                # best-effort, silent
+        Invoke-Regsvr32 -Exe $t.Regsvr -Dll $t.Dest -Unregister | Out-Null   # best-effort
     }
     foreach ($t in $installed) {
         Write-Host "==> installing $($t.Name) -> $($t.Dest)" -ForegroundColor Cyan
@@ -203,8 +250,8 @@ try {
     }
     foreach ($t in $installed) {
         Write-Host "==> $(Split-Path $t.Regsvr -Leaf) /s ($($t.Name))" -ForegroundColor Cyan
-        & $t.Regsvr /s $t.Dest
-        if ($LASTEXITCODE) { throw "regsvr32 ($($t.Name)) failed ($LASTEXITCODE)" }
+        $rc = Invoke-Regsvr32 -Exe $t.Regsvr -Dll $t.Dest
+        if ($rc) { throw "regsvr32 ($($t.Name)) failed ($rc)" }
     }
 
     # The profile is what the language switcher reads through; if it is missing
@@ -258,27 +305,11 @@ try {
     Set-ItemProperty $UninstallRK NoModify 1 -Type DWord
     Set-ItemProperty $UninstallRK NoRepair 1 -Type DWord
 
-    # add ne-NP + this TIP to the user's language list -> shows in the switcher
-    Write-Host "==> adding the Nepali keyboard to your language list" -ForegroundColor Cyan
-    try {
-        $list = Get-WinUserLanguageList
-        if (-not ($list | Where-Object { $_.LanguageTag -eq 'ne-NP' })) { $list.Add('ne-NP') }
-        $ne = $list | Where-Object { $_.LanguageTag -eq 'ne-NP' }
-        if ($ne -and ($ne.InputMethodTips -notcontains $Tip)) { $ne.InputMethodTips.Add($Tip) }
-        Set-WinUserLanguageList $list -Force
-
-        # Windows drops a TIP it cannot resolve to a registered profile, and
-        # does so without complaining - the call "succeeds" and the keyboard is
-        # simply not there. Read it back rather than trust it.
-        $after = Get-WinUserLanguageList | Where-Object { $_.LanguageTag -eq 'ne-NP' }
-        if ($after -and ($after.InputMethodTips -contains $Tip)) {
-            Write-Host '    keyboard added and verified' -ForegroundColor DarkGray
-        }
-        else {
-            Write-Warning "Windows did not keep the keyboard in your language list. Add 'Input by Prabidhi.bid' from Settings > Time & Language > Language & region > Nepali > Language options > Keyboards."
-        }
-    } catch {
-        Write-Warning "couldn't auto-add the keyboard ($_). Add it from Settings > Language > Nepali > Keyboards."
+    # Only meaningful when the script was started from an already-elevated
+    # shell; the normal path does this in the unelevated parent instead.
+    if (-not $Elevated) {
+        Write-Host "==> adding the Nepali keyboard to your language list" -ForegroundColor Cyan
+        Add-NeKeyboard | Out-Null
     }
 
     foreach ($p in $HostProcs) { Stop-Process -Name $p -Force -ErrorAction SilentlyContinue }
