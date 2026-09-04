@@ -150,6 +150,20 @@ function Resolve-Source($t) {
 
 try {
     Add-RustTargets
+
+    # The word editor is a normal executable, so one host-architecture build is
+    # enough - unlike the DLL, it is never loaded into anybody else's process.
+    if (-not $NoBuild -and $repoRoot) {
+        Write-Host "==> cargo build -p xlit-config ($Configuration)" -ForegroundColor Cyan
+        Push-Location $repoRoot
+        try {
+            $flags = @('build', '-p', 'xlit-config')
+            if ($Configuration -eq 'release') { $flags += '--release' }
+            & cargo @flags
+            if ($LASTEXITCODE) { Write-Warning "the word editor did not build ($LASTEXITCODE); the '+' on the floating bar will do nothing" }
+        } finally { Pop-Location }
+    }
+
     foreach ($p in $HostProcs) { Stop-Process -Name $p -Force -ErrorAction SilentlyContinue }
     Start-Sleep -Milliseconds 400
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
@@ -174,6 +188,27 @@ try {
         $installed += $t
     }
     if (-not $installed) { throw 'nothing installed' }
+
+    # The word editor. A separate executable rather than a dialog inside the
+    # DLL, which is loaded into every application that takes typing; the
+    # floating bar's "+" launches it from beside the DLL.
+    $cfgName = 'xlit-config.exe'
+    $cfgDst = Join-Path $InstallDir $cfgName
+    $cfgSrc = $null
+    foreach ($c in @(
+            (Join-Path $here $cfgName),
+            $(if ($repoRoot) { Join-Path $repoRoot "target\x86_64-pc-windows-msvc\$Configuration\$cfgName" }),
+            $(if ($repoRoot) { Join-Path $repoRoot "target\$Configuration\$cfgName" }))) {
+        if ($c -and (Test-Path $c)) { $cfgSrc = $c; break }
+    }
+    if ($cfgSrc) {
+        Write-Host "==> installing the word editor -> $cfgDst" -ForegroundColor Cyan
+        Clear-LockedFile $cfgDst
+        Copy-Item $cfgSrc $cfgDst -Force
+    }
+    else {
+        Write-Warning "$cfgName not found - the '+' on the floating bar will do nothing. Build it with: cargo build -p xlit-config --release"
+    }
 
     # copy the uninstaller alongside the DLLs (needed by the Apps & features entry)
     $uninstSrc = Join-Path $here 'uninstall.ps1'

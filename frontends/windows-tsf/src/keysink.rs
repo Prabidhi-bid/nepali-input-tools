@@ -140,9 +140,21 @@ impl KeyEventSink_Impl {
 }
 
 impl ITfKeyEventSink_Impl for KeyEventSink_Impl {
-    fn OnSetFocus(&self, _fforeground: BOOL) -> Result<()> {
-        // The popup belongs to the document we just left.
-        self.sess.borrow_mut().window.hide();
+    /// Focus moved between documents.
+    ///
+    /// This is also what keeps the floating bar singular. Every process that
+    /// takes input has its own session and its own bar; showing it only while
+    /// this document holds focus means exactly one is ever on screen.
+    fn OnSetFocus(&self, fforeground: BOOL) -> Result<()> {
+        let weak = std::rc::Rc::downgrade(&self.sess);
+        let mut s = self.sess.borrow_mut();
+        // The candidate popup belongs to the document we just left.
+        s.window.hide();
+        if fforeground.as_bool() {
+            s.bar.show(&weak);
+        } else {
+            s.bar.hide();
+        }
         Ok(())
     }
 
@@ -166,6 +178,11 @@ impl ITfKeyEventSink_Impl for KeyEventSink_Impl {
 
     fn OnKeyDown(&self, pic: Ref<'_, ITfContext>, wparam: WPARAM, lparam: LPARAM) -> Result<BOOL> {
         let ctx = pic.ok()?;
+        // Stash the context so a click on the status bar, which has none of its
+        // own, can still commit a word in progress.
+        if let Ok(mut s) = self.sess.try_borrow_mut() {
+            s.last_ctx = Some(ctx.clone());
+        }
         let Some((composing, ncands)) = self.state() else {
             return Ok(BOOL(0));
         };
@@ -218,6 +235,7 @@ impl ITfKeyEventSink_Impl for KeyEventSink_Impl {
         let mut s = self.sess.borrow_mut();
         s.enabled = !s.enabled;
         crate::debug(if s.enabled { "enabled" } else { "passthrough" });
+        s.bar.refresh();
         Ok(BOOL(1))
     }
 }

@@ -13,6 +13,7 @@
 #![allow(non_snake_case)]
 #![allow(clippy::missing_safety_doc)]
 
+mod bar;
 mod candwin;
 mod editsession;
 mod engine;
@@ -20,6 +21,7 @@ mod keysink;
 mod register;
 mod service;
 mod session;
+mod wordeditor;
 
 use core::ffi::c_void;
 use std::sync::atomic::{AtomicIsize, AtomicPtr, Ordering};

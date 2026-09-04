@@ -27,6 +27,7 @@ use windows::Win32::UI::TextServices::{
     TF_SELECTION, TF_SELECTIONSTYLE,
 };
 
+use crate::bar::StatusBar;
 use crate::candwin::CandWindow;
 use crate::{editsession, engine};
 
@@ -47,6 +48,12 @@ pub struct Session {
     pub enabled: bool,
     /// The candidate popup. Created lazily on the first word typed.
     pub window: CandWindow,
+    /// The floating mode indicator.
+    pub bar: StatusBar,
+    /// The context of the last key event, so the status bar — which is clicked
+    /// with the mouse and so has no context of its own — can still commit a
+    /// word in progress before switching modes.
+    pub last_ctx: Option<ITfContext>,
 }
 
 impl Session {
@@ -59,6 +66,8 @@ impl Session {
             comp: None,
             enabled: true,
             window: CandWindow::new(),
+            bar: StatusBar::new(),
+            last_ctx: None,
         }))
     }
 
@@ -68,7 +77,7 @@ impl Session {
 
     /// Text the composition should currently display: the highlighted
     /// candidate, or the raw Latin before the engine has said anything.
-    fn preview(&self) -> String {
+    pub fn preview(&self) -> String {
         self.cands.get(self.sel).cloned().unwrap_or_else(|| self.buf.clone())
     }
 

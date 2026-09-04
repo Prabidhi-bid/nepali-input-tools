@@ -355,20 +355,21 @@ fn work_area(x: i32, y: i32) -> Option<RECT> {
 }
 
 // `GetWindowLongPtrW` only exists on 64-bit; the 32-bit build (which a TSF
-// service needs, for 32-bit host apps) uses the non-Ptr form.
+// service needs, for 32-bit host apps) uses the non-Ptr form. Shared with the
+// status bar, which stores its own state the same way.
 #[cfg(target_pointer_width = "64")]
-unsafe fn get_userdata(hwnd: HWND) -> isize {
+pub(crate) unsafe fn get_userdata(hwnd: HWND) -> isize {
     windows::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(hwnd, GWLP_USERDATA)
 }
 #[cfg(target_pointer_width = "64")]
-unsafe fn set_userdata(hwnd: HWND, v: isize) {
+pub(crate) unsafe fn set_userdata(hwnd: HWND, v: isize) {
     windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrW(hwnd, GWLP_USERDATA, v);
 }
 #[cfg(not(target_pointer_width = "64"))]
-unsafe fn get_userdata(hwnd: HWND) -> isize {
+pub(crate) unsafe fn get_userdata(hwnd: HWND) -> isize {
     windows::Win32::UI::WindowsAndMessaging::GetWindowLongW(hwnd, GWLP_USERDATA) as isize
 }
 #[cfg(not(target_pointer_width = "64"))]
-unsafe fn set_userdata(hwnd: HWND, v: isize) {
+pub(crate) unsafe fn set_userdata(hwnd: HWND, v: isize) {
     windows::Win32::UI::WindowsAndMessaging::SetWindowLongW(hwnd, GWLP_USERDATA, v as i32);
 }

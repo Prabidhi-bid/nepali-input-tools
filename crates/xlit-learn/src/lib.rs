@@ -17,6 +17,9 @@ use serde::{Deserialize, Serialize};
 use xlit_core::{merge_candidate, Candidate, Ranker, Source};
 
 const DAY_SECS: u64 = 86_400;
+/// Weight given to a hand-entered word, so it outranks the dictionary from the
+/// first use instead of having to be picked repeatedly.
+const PINNED_COUNT: u32 = 8;
 
 #[derive(Clone, Serialize, Deserialize)]
 struct Pick {
@@ -29,12 +32,19 @@ struct Pick {
 pub struct LearnStore {
     path: Option<PathBuf>,
     picks: Mutex<HashMap<(String, String), Pick>>,
+    /// Modification time of the file as we last saw it, so a change made by
+    /// another process can be noticed. See [`LearnStore::reload_if_changed`].
+    seen: Mutex<Option<SystemTime>>,
 }
 
 impl LearnStore {
     /// Non-persistent store (tests, one-shot use).
     pub fn in_memory() -> Self {
-        LearnStore { path: None, picks: Mutex::new(HashMap::new()) }
+        LearnStore {
+            path: None,
+            picks: Mutex::new(HashMap::new()),
+            seen: Mutex::new(None),
+        }
     }
 
     /// Open (or start) a JSON-backed store at `path`.
@@ -48,7 +58,77 @@ impl LearnStore {
                 map.insert((p.input.clone(), p.chosen.clone()), p);
             }
         }
-        Ok(LearnStore { path: Some(path), picks: Mutex::new(map) })
+        let seen = mtime(&path);
+        Ok(LearnStore {
+            path: Some(path),
+            picks: Mutex::new(map),
+            seen: Mutex::new(seen),
+        })
+    }
+
+    /// Re-read the file if another process has written it since we last looked.
+    ///
+    /// The word editor is a separate process, so without this a word added
+    /// there would not take effect until every application holding the input
+    /// method was restarted. Costs one stat per call; the read only happens
+    /// when the file has actually moved on.
+    pub fn reload_if_changed(&self) {
+        let Some(path) = &self.path else { return };
+        let now = mtime(path);
+        {
+            let seen = self.seen.lock().unwrap();
+            if *seen == now {
+                return;
+            }
+        }
+        let Ok(bytes) = std::fs::read(path) else { return };
+        let Ok(list) = serde_json::from_slice::<Vec<Pick>>(&bytes) else { return };
+        let mut map = HashMap::with_capacity(list.len());
+        for p in list {
+            map.insert((p.input.clone(), p.chosen.clone()), p);
+        }
+        *self.picks.lock().unwrap() = map;
+        *self.seen.lock().unwrap() = now;
+    }
+
+    /// Every remembered pair, most-used first.
+    pub fn entries(&self) -> Vec<(String, String, u32)> {
+        let g = self.picks.lock().unwrap();
+        let mut out: Vec<(String, String, u32)> = g
+            .values()
+            .map(|p| (p.input.clone(), p.chosen.clone(), p.count))
+            .collect();
+        out.sort_by(|a, b| b.2.cmp(&a.2).then_with(|| a.0.cmp(&b.0)));
+        out
+    }
+
+    /// Forget one pair, and persist.
+    pub fn remove(&self, input: &str, chosen: &str) -> io::Result<()> {
+        {
+            let mut g = self.picks.lock().unwrap();
+            g.remove(&(input.to_string(), chosen.to_string()));
+        }
+        self.flush()
+    }
+
+    /// Record `chosen` for `input` with enough weight to beat the dictionary
+    /// outright — for words the user has entered by hand, which should win
+    /// immediately rather than after being picked a few times.
+    pub fn pin(&self, input: &str, chosen: &str) -> io::Result<()> {
+        {
+            let mut g = self.picks.lock().unwrap();
+            let entry = g
+                .entry((input.to_string(), chosen.to_string()))
+                .or_insert(Pick {
+                    input: input.to_string(),
+                    chosen: chosen.to_string(),
+                    count: 0,
+                    last_used: 0,
+                });
+            entry.count = entry.count.max(PINNED_COUNT);
+            entry.last_used = now();
+        }
+        self.flush()
     }
 
     /// Record that `chosen` was committed for `input`, and persist.
@@ -86,8 +166,15 @@ impl LearnStore {
         let tmp = path.with_extension("json.tmp");
         std::fs::write(&tmp, &json)?;
         std::fs::rename(&tmp, path)?;
+        // Remember our own write, so reload_if_changed does not treat it as
+        // somebody else's and re-read the file we just produced.
+        *self.seen.lock().unwrap() = mtime(path);
         Ok(())
     }
+}
+
+fn mtime(path: &Path) -> Option<SystemTime> {
+    std::fs::metadata(path).ok()?.modified().ok()
 }
 
 fn now() -> u64 {
@@ -99,6 +186,7 @@ fn now() -> u64 {
 
 impl Ranker for LearnStore {
     fn rank(&self, input: &str, mut cands: Vec<Candidate>) -> Vec<Candidate> {
+        self.reload_if_changed();
         let g = self.picks.lock().unwrap();
         let now = now();
         for ((inp, chosen), p) in g.iter() {

@@ -76,6 +76,12 @@ Source: "{#DllPathX86}"; DestDir: "{app}\x86"; DestName: "xlit_tsf.dll"; \
 Source: "{#DllPathX86}"; DestDir: "{app}"; DestName: "xlit_tsf.dll"; \
   Check: Is32; Flags: ignoreversion restartreplace uninsrestartdelete 32bit
 #endif
+#ifdef ConfigPath
+; The word editor, launched by the "+" on the floating bar. A normal
+; executable, so one build serves both install modes.
+Source: "{#ConfigPath}"; DestDir: "{app}"; DestName: "xlit-config.exe"; \
+  Flags: ignoreversion restartreplace uninsrestartdelete
+#endif
 
 [Run]
 ; ----- deregister any prior copy (no-op on a fresh install) -----

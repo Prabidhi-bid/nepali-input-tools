@@ -350,6 +350,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "xlit-config"
+version = "0.1.0"
+dependencies = [
+ "windows",
+ "xlit-core",
+ "xlit-dict",
+ "xlit-learn",
+]
+
+[[package]]
 name = "xlit-core"
 version = "0.1.0"
 dependencies = [
