@@ -128,18 +128,37 @@ foreach ($p in 'ctfmon', 'TextInputHost') {
 # --- 5. can the DLL actually load? -------------------------------------------
 Say ''
 Say '5. Loading the DLL' Cyan
-# regsvr32 re-running DllRegisterServer is the cheapest end-to-end proof that
-# the file loads, its dependencies resolve, and nothing is blocking it.
-if ($anyDll) {
+# Re-running DllRegisterServer is the cheapest end-to-end proof that the file
+# loads, its dependencies resolve, and nothing is blocking it. It writes to
+# HKLM, though, so unelevated it always fails with 5 (access denied) and proves
+# nothing - don't report that as a fault.
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $anyDll) {
+    Note 'skipped - nothing registered'
+}
+elseif (-not $isAdmin) {
+    Note 'skipped - needs an elevated shell (unelevated, regsvr32 always fails with 5)'
+}
+else {
     $x64 = (Get-ItemProperty $views[0].Path -ErrorAction SilentlyContinue).'(default)'
     if ($x64 -and (Test-Path $x64)) {
         $p = Start-Process -FilePath "$env:windir\System32\regsvr32.exe" `
             -ArgumentList '/s', "`"$x64`"" -Wait -PassThru -ErrorAction SilentlyContinue
         if ($p -and $p.ExitCode -eq 0) { Ok 'the x64 DLL loads and self-registers' }
-        else { Bad "regsvr32 could not load the DLL (exit $($p.ExitCode)) - needs admin, or something is blocking it" }
+        else { Bad "regsvr32 could not load the DLL (exit $($p.ExitCode)) - something is blocking it" }
     }
 }
-else { Note 'skipped - nothing registered' }
+
+# The DLL must not need a redistributable: it is loaded into every process that
+# takes text input, and VCRUNTIME140.dll is not resolvable from all of them.
+if ($anyDll) {
+    $x64 = (Get-ItemProperty $views[0].Path -ErrorAction SilentlyContinue).'(default)'
+    if ($x64 -and (Test-Path $x64)) {
+        $sig = Get-AuthenticodeSignature $x64 -ErrorAction SilentlyContinue
+        Note "code signature: $($sig.Status) (unsigned is expected - this project does not sign)"
+    }
+}
 
 # --- 6. software known to block text services --------------------------------
 Say ''
@@ -180,10 +199,19 @@ try {
     $cg = Get-CimInstance -ClassName Win32_DeviceGuard `
         -Namespace root\Microsoft\Windows\DeviceGuard -ErrorAction Stop
     if ($cg.CodeIntegrityPolicyEnforcementStatus -gt 0) {
-        Note "Code Integrity enforcement is ON (status $($cg.CodeIntegrityPolicyEnforcementStatus)) - an unsigned DLL may be refused"
+        Note "Code Integrity enforcement is ON (status $($cg.CodeIntegrityPolicyEnforcementStatus))"
     }
 }
 catch {}
+$sac = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' `
+        -ErrorAction SilentlyContinue).VerifiedAndReputablePolicyState
+if ($sac -eq 1) {
+    # Worth knowing but rarely the culprit: an unsigned TIP has been observed
+    # loading fine under Smart App Control. Rule out sections 1-5 first, and
+    # note that SAC cannot be re-enabled once turned off, short of reinstalling
+    # Windows - so it is a last resort, not a first move.
+    Note 'Smart App Control is ENFORCED. It can refuse unsigned binaries, but check everything above first: turning it off is irreversible.'
+}
 
 # --- summary ------------------------------------------------------------------
 Say ''
