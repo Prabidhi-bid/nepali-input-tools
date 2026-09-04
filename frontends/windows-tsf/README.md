@@ -3,12 +3,34 @@
 A COM in-process DLL that plugs the `xlit` engine into Windows' Text Services
 Framework, so you can type Nepali phonetically in any application.
 
-## Status: M6.1 — registrable no-op
+## Status: M6.2 — it types
 
-The DLL registers as an input method ("Input by Prabidhi.bid") and can be
-activated without crashing. It does **not** intercept keys yet — that's M6.2.
-Use this stage only to confirm install / activate / uninstall work on your
-machine.
+The DLL registers as an input method ("Input by Prabidhi.bid"), and once you
+switch to it, letters are converted inline:
+
+| Key | Effect |
+|-----|--------|
+| `a`–`z`, `A`–`Z` | extend the word; the composition shows the converted form as you type |
+| Space | commit, then insert the space |
+| `.` `,` `?` … | commit, then insert that character |
+| Enter / Tab | commit (no newline or tab is inserted — press again for that) |
+| Backspace | drop one Latin letter and re-convert |
+| Esc | give up on the conversion, leave the raw Latin |
+| `1`–`9` | commit that numbered candidate |
+| ↑ / ↓ | move through the candidates |
+| **Ctrl+Space** | toggle between Nepali and plain Latin without switching input method |
+
+Type `namaste` and you see नमस्ते build up underlined; Space commits it. The
+case matters — the schema uses `M` for anusvara, `T` for ट, `S` for श — so
+`kaaThamaaDauM` gives काठमाडौं.
+
+Candidates are ranked by the same engine the CLI uses (rule → dictionary →
+learning), so `nepaali` corrects to नेपाली and `hello` gives हेलो. Picking a
+numbered candidate is remembered in `%APPDATA%\xlit\xlit-learn.json` and floats
+that choice to the top next time.
+
+There is no candidate *window* yet — `1`–`9` and the arrows work, you just can't
+see the list. That's M6.3.
 
 ## Build
 
@@ -46,8 +68,6 @@ then add the keyboard yourself: Settings → Time & Language → Language & regi
 **Add a language** → Nepali (नेपाली) → Language options → Keyboards → add
 **Input by Prabidhi.bid**.
 
-At M6.1 typing still produces normal Latin — activation is only logged.
-
 ## Verify activation
 
 Trace output is behind the `trace` feature (off by default so release /
@@ -58,12 +78,17 @@ cargo build -p xlit-tsf --release --features trace
 ```
 
 Then run [DebugView](https://learn.microsoft.com/sysinternals/downloads/debugview)
-as admin (enable *Capture Global Win32*). Switching to the input method prints:
+as admin (enable *Capture Global Win32*). Switching to the input method and
+typing prints:
 
 ```
 [xlit-tsf] Activate (client id N)
+[xlit-tsf] engine ready
 [xlit-tsf] Deactivate
 ```
+
+`render failed: ...` there means the focused control refused a composition —
+see *Troubleshooting* below.
 
 ## Uninstall (Administrator)
 
@@ -104,6 +129,20 @@ swept on the next run.
 - The taskbar input indicator appears only with 2+ input methods; the built-in
   English keyboard plus this one is enough.
 
+## Troubleshooting: typing does nothing, or stays Latin
+
+- **Nothing appears at all.** The control refused the composition. We report the
+  letter as unhandled in that case, so you should still get plain Latin rather
+  than a dead keyboard — if you get neither, build `--features trace` and look
+  for `render failed:` in DebugView.
+- **Latin comes out instead of Devanagari.** Either the input method is not the
+  active one (check the taskbar indicator, Win+Space), or Ctrl+Space has toggled
+  it to passthrough — press Ctrl+Space again.
+- **Ctrl+Space does nothing.** Another text service already reserved the chord;
+  the trace log says `toggle key unavailable`. Nothing else breaks.
+- **A 32-bit app types Latin while 64-bit apps work** (or vice versa): only one
+  bitness is registered. Re-run `install.ps1` without `-SkipX86`.
+
 ## Notes
 
 - **x86 + x64.** A TSF DLL loads into every text-input process, so 64-bit
@@ -113,14 +152,17 @@ swept on the next run.
   `--target i686-pc-windows-msvc` (`rustup target add i686-pc-windows-msvc`; the
   i686 build also needs the x86 MSVC toolchain). ARM64: the x64 + x86 payloads
   run under emulation; no native ARM64 build yet.
-- The DLL links `xlit-core` + the compiled-in seed dictionary directly
-  (~0.4 MB). It will move to talking to `xlit-daemon` once M3 lands, so the
-  engine data is loaded once instead of per-process.
+- The DLL links `xlit-core`, `xlit-dict` and `xlit-learn` with the compiled-in
+  seed dictionary directly (~430 KB). It will move to talking to `xlit-daemon`
+  once M3 lands, so the engine data is loaded once instead of per-process.
+- **Every key we claim is gone for good.** TSF asks `OnTestKeyDown` first and
+  only calls `OnKeyDown` if that said yes; a key claimed there never reaches the
+  application, even if `OnKeyDown` then declines it. That is why committing on
+  Space re-inserts the space itself instead of letting it through.
 - GUIDs (keep stable): CLSID `{438E43E4-3800-4AB1-82A6-A2E831ABF107}`,
   profile `{4BE59555-69DD-48CA-8BC8-AB450205A567}`, LANGID `0x0461`.
 
-## Next (M6.2)
+## Next (M6.3)
 
-Key-event sink + inline composition: buffer ASCII letters as a TSF composition,
-and on a break key (space / punctuation / Enter) replace the composition with
-the engine's top candidate.
+A candidate window: a layered popup under the composition listing the numbered
+candidates, so the `1`–`9` and arrow keys that already work become visible.

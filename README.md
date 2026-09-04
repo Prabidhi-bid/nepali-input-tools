@@ -14,11 +14,16 @@ each layer is optional and cheap:
 | **Rule engine** (`xlit-core`) | Latin → script, deterministic, OOV fallback | < 100 KB | ~0 |
 | **Dictionary FST** (`xlit-dict`) | correct spelling, rank, complete common words | 2–8 MB | 3–10 MB |
 | **n-gram LM** *(optional)* | sentence-context re-ranking | 10–30 MB | ~10 MB |
-| **Neural ONNX** *(optional, lazy)* | out-of-vocabulary names / rare words only | 30–60 MB | 80–150 MB when loaded |
 | **User learning** (`xlit-learn`) | personalization, JSON-backed | grows slowly | < 1 MB |
 
 Target steady footprint: **~25–40 MB resident**, shared across every app via a
-single daemon (frontends are ~2 MB clients). The neural model is off by default.
+single daemon (frontends are ~2 MB clients).
+
+There is deliberately **no neural model**. Rule + dictionary + learning covers
+the language, and a lazy ONNX layer would have cost 80–150 MB resident whenever
+it fired — against the whole point of the design. Unknown words fall back to the
+rule engine's literal transliteration, which is always right about the sounds
+even when it cannot know the spelling.
 
 ## Status
 
@@ -26,12 +31,12 @@ single daemon (frontends are ~2 MB clients). The neural model is off by default.
 - [x] Dev REPL (`xlit-cli`)
 - [x] Dictionary FST layer (`xlit-dict`) — exact / fuzzy / prefix, mmap-capable
 - [x] User-learning store (`xlit-learn`) — JSON-backed, boosts past picks
+- [~] Windows TSF frontend (`xlit-tsf`) — **types Nepali in real apps** as of
+      M6.2; candidate window is next
+      (see [frontends/windows-tsf/README.md](frontends/windows-tsf/README.md))
 - [ ] Daemon + IPC (named pipe / Unix socket)
 - [ ] Linux IBus frontend
 - [ ] Linux Fcitx5 frontend
-- [~] Windows TSF frontend (`xlit-tsf`) — M6.1 registrable DLL done; key handling next
-      (see [frontends/windows-tsf/README.md](frontends/windows-tsf/README.md))
-- [ ] (later) ONNX OOV fallback + training pipeline in `training/`
 
 See [docs/architecture.md](docs/architecture.md) for the full plan and milestones.
 
@@ -64,8 +69,8 @@ crates/
     src/bin/     build.rs — TSV -> .fst compiler
   xlit-learn/    learning Ranker: remembers (input -> chosen), JSON-backed
   xlit-cli/      dev REPL / one-shot tester
-frontends/       per-OS input-method plugins (added incrementally)
-training/        (later) data prep + train + ONNX export for the OOV model
+frontends/
+  windows-tsf/   Windows text service (xlit_tsf.dll) + installer
 docs/            architecture & design notes
 ```
 

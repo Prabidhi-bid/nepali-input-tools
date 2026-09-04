@@ -59,13 +59,8 @@ Encryption=yes
 Password={#SetupPassword}
 #endif
 
-; --- optional: Authenticode signing (the real anti-tamper measure) ---
-; Register a signer once (Tools > Configure Sign Tools in the Inno IDE, or):
-;   iscc /Sstandard="\"C:\...\signtool.exe\" sign /fd sha256 /a ^
-;        /tr http://timestamp.digicert.com /td sha256 $f" xlit-tsf.iss
-; then uncomment:
-; SignTool=standard
-; SignedUninstaller=yes
+; Not code-signed by design (no certificate). SmartScreen will warn on first
+; run of the resulting Setup.exe; that is expected, not a build problem.
 
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl"

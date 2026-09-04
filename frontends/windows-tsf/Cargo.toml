@@ -18,6 +18,8 @@ trace = []
 
 [dependencies]
 xlit-core = { path = "../../crates/xlit-core" }
+xlit-dict = { path = "../../crates/xlit-dict" }
+xlit-learn = { path = "../../crates/xlit-learn" }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"
@@ -27,6 +29,7 @@ windows-core = "0.62"
 version = "0.62"
 features = [
     "Win32_Foundation",
+    "Win32_Graphics_Gdi",
     "Win32_System_Com",
     "Win32_System_Diagnostics_Debug",
     "Win32_System_LibraryLoader",

@@ -16,8 +16,7 @@ separate so the same engine binary serves every platform.
             │  1. RuleEngine    → नमस्ते  (always)      │
             │  2. Dictionary FST → re-rank / complete   │
             │  3. n-gram LM      → context (optional)   │
-            │  4. ONNX fallback  → OOV only (optional)  │
-            │  5. Learning store → personal boost       │
+            │  4. Learning store → personal boost       │
             │    │                                     │
             │    ▼                                     │
             │  ranked Vec<Candidate>                   │
@@ -40,14 +39,17 @@ separate so the same engine binary serves every platform.
   (Chrome, Word, Explorer…). If it held the data directly, each app would pay
   for it. The daemon holds the data once; frontends are ~2 MB clients speaking a
   small IPC protocol.
-- **Neural model is opt-in and lazy.** Off by default. Loaded only on first OOV
-  miss, unloaded after idle. Steady state never pays for it.
+- **No neural layer at all.** An ONNX out-of-vocabulary model was planned and
+  has been dropped: it would have cost 80–150 MB resident whenever it fired,
+  which is more than the rest of the system put together, to improve a case the
+  rule engine already handles legibly. Unknown words get the literal
+  transliteration — right about the sounds, occasionally wrong about the
+  spelling — and the dictionary seed is the cheaper place to spend effort.
 - **Rust, `opt-level="z"`, `panic="abort"`, `strip`.** Small static binaries,
   no runtime, minimal allocator pressure.
 
 Expected resident set for the daemon: **~25–40 MB** with rule + dictionary +
-learning; **+~10 MB** if the LM is enabled; **+80–150 MB** transiently if the
-neural fallback fires.
+learning; **+~10 MB** if the LM is enabled.
 
 ## Engine internals (`xlit-core`)
 
@@ -141,10 +143,20 @@ the engine to `commit` for learning.
      the modern switcher; **not** `COMLESS` — this is a classic COM server and
      declaring it hid the TIP from `TextInputHost`). Activatable; no key
      handling yet. Install: `frontends/windows-tsf/installer/`.
-   - **M6.2**: `ITfKeyEventSink` + inline TSF composition — buffer ASCII, replace
-     with the engine's top candidate on a break key.
-   - **M6.3**: candidate window (layered popup) + number-key select + `xlit-learn`.
-   - **M6.4**: language-bar icon, Chrome/Electron/UWP fixes, toggle key.
+   - **M6.2** *(done)*: `ITfKeyEventSink` + inline TSF composition. The Latin
+     buffer is re-converted and rewritten whole on every keystroke, so Backspace
+     needs no Latin↔Devanagari mapping; the composition shows the converted top
+     candidate, not the raw Latin. A break key commits and **re-inserts its own
+     character** — a key claimed in `OnTestKeyDown` never reaches the app, so
+     letting Space through is not an option. Number/arrow selection and
+     `xlit-learn` commits work already; they are just invisible until M6.3.
+     Failure modes matter here because the DLL is `panic="abort"` inside every
+     text-input process: a refused composition reports the letter as unhandled
+     (plain Latin, not a dead keyboard), and `OnCompositionTerminated` takes the
+     session lock with `try_borrow_mut` so a re-entrant teardown cannot panic.
+   - **M6.3**: candidate window (layered popup) so the numbered list is visible.
+   - **M6.4**: language-bar icon, Chrome/Electron/UWP fixes. The Ctrl+Space
+     passthrough toggle landed early, with M6.2.
    - **M6.5** *(initial)*: `installer/` — `xlit-tsf.iss` + `build-setup.ps1`
      produce a distributable Inno Setup `Setup.exe`; `install.ps1` /
      `uninstall.ps1` are the toolchain-free path. Both build **x64 + x86**
@@ -153,10 +165,18 @@ the engine to `commit` for learning.
      with the matching-bitness `regsvr32`, and add the keyboard with
      `Set-WinUserLanguageList`; uninstall fully reverses (incl. HKLM key
      force-delete + HKCU CTF sweep). Release DLL is stripped, trace behind a
-     cargo feature. TODO: code signing, a signed MSI, native ARM64.
-7. **M7 — ONNX OOV fallback**: `training/` pipeline (Dakshina `ne` +
-   Aksharantar `nep` → small char transformer → int8 ONNX), lazy-loaded `Ranker`.
-8. **M8 — packaging**: signed installers, per-distro packages, language packs.
+     cargo feature. TODO: native ARM64.
+7. **M7 — packaging**: per-distro Linux packages, language packs.
+
+## Dropped
+
+- **Neural OOV fallback.** Was M7: a `training/` pipeline (Dakshina `ne` +
+  Aksharantar `nep` → small char transformer → int8 ONNX) behind a lazy
+  `Ranker`. Cut for the RAM reason above; `training/` is deleted (see git
+  history if it is ever wanted back).
+- **Code signing.** No Authenticode certificate, so no signed `Setup.exe` and no
+  signed MSI. Windows SmartScreen will warn on first run of the installer; that
+  is the accepted cost.
 
 ## Non-goals (for now)
 

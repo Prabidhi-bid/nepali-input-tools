@@ -383,6 +383,8 @@ dependencies = [
  "windows-core",
  "winreg",
  "xlit-core",
+ "xlit-dict",
+ "xlit-learn",
 ]
 
 [[package]]

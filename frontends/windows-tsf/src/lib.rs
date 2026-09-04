@@ -13,7 +13,13 @@
 #![allow(non_snake_case)]
 #![allow(clippy::missing_safety_doc)]
 
+mod candwin;
+mod editsession;
+mod engine;
+mod keysink;
 mod register;
+mod service;
+mod session;
 
 use core::ffi::c_void;
 use std::sync::atomic::{AtomicIsize, AtomicPtr, Ordering};
@@ -26,7 +32,9 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::System::Com::{IClassFactory, IClassFactory_Impl};
 use windows::Win32::System::LibraryLoader::{DisableThreadLibraryCalls, GetModuleFileNameW};
-use windows::Win32::UI::TextServices::{ITfTextInputProcessor, ITfTextInputProcessor_Impl, ITfThreadMgr};
+use windows::Win32::UI::TextServices::ITfTextInputProcessor;
+
+use crate::service::TextService;
 
 /// COM class id of this text service. Must match `register.rs` and the docs.
 pub(crate) const CLSID_XLIT: GUID = GUID::from_u128(0x438E43E4_3800_4AB1_82A6_A2E831ABF107);
@@ -176,34 +184,3 @@ impl IClassFactory_Impl for ClassFactory_Impl {
     }
 }
 
-// ---------------------------------------------------------------------------
-// The text service (M6.1 stub)
-// ---------------------------------------------------------------------------
-
-#[implement(ITfTextInputProcessor)]
-struct TextService;
-
-impl TextService {
-    fn new() -> Self {
-        module_add_ref();
-        TextService
-    }
-}
-
-impl Drop for TextService {
-    fn drop(&mut self) {
-        module_release();
-    }
-}
-
-impl ITfTextInputProcessor_Impl for TextService_Impl {
-    fn Activate(&self, _ptim: Ref<'_, ITfThreadMgr>, tid: u32) -> Result<()> {
-        debug(&format!("Activate (client id {tid})"));
-        Ok(())
-    }
-
-    fn Deactivate(&self) -> Result<()> {
-        debug("Deactivate");
-        Ok(())
-    }
-}
