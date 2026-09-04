@@ -27,6 +27,14 @@ struct Pick {
     chosen: String,
     count: u32,
     last_used: u64,
+    /// Entered by hand in the word editor, as opposed to picked from the
+    /// candidate list while typing.
+    #[serde(default)]
+    manual: bool,
+    /// Kept so files written by older builds still load, and so the field
+    /// survives a round trip. Nothing is uploaded.
+    #[serde(default)]
+    synced: bool,
 }
 
 pub struct LearnStore {
@@ -91,6 +99,34 @@ impl LearnStore {
         *self.seen.lock().unwrap() = now;
     }
 
+    /// Replace the contents with words from the server.
+    ///
+    /// For the *shared* store only, which is a local cache of what the server
+    /// holds — hence a replace rather than a merge, so words withdrawn upstream
+    /// disappear here too. The user's own file is never passed to this.
+    pub fn replace_all(&self, words: &[(String, String)]) -> io::Result<()> {
+        {
+            let mut g = self.picks.lock().unwrap();
+            g.clear();
+            for (input, chosen) in words {
+                g.insert(
+                    (input.clone(), chosen.clone()),
+                    Pick {
+                        input: input.clone(),
+                        chosen: chosen.clone(),
+                        // Enough to beat the dictionary, but below a word the
+                        // user pinned themselves: their own choice wins.
+                        count: 1,
+                        last_used: now(),
+                        manual: false,
+                        synced: true,
+                    },
+                );
+            }
+        }
+        self.flush()
+    }
+
     /// Every remembered pair, most-used first.
     pub fn entries(&self) -> Vec<(String, String, u32)> {
         let g = self.picks.lock().unwrap();
@@ -124,9 +160,14 @@ impl LearnStore {
                     chosen: chosen.to_string(),
                     count: 0,
                     last_used: 0,
+                    manual: true,
+                    synced: false,
                 });
             entry.count = entry.count.max(PINNED_COUNT);
             entry.last_used = now();
+            // Re-saving a word the user had only picked before promotes it to
+            // a deliberate entry.
+            entry.manual = true;
         }
         self.flush()
     }
@@ -140,6 +181,8 @@ impl LearnStore {
                 chosen: chosen.to_string(),
                 count: 0,
                 last_used: 0,
+                manual: false,
+                synced: false,
             });
             entry.count += 1;
             entry.last_used = now();

@@ -20,6 +20,8 @@
 #![cfg(windows)]
 #![windows_subsystem = "windows"]
 
+mod sync;
+
 use std::cell::RefCell;
 
 use windows::core::{w, PCWSTR};
@@ -51,6 +53,7 @@ const ID_SAVE: usize = 103;
 const ID_LIST: usize = 104;
 const ID_REMOVE: usize = 105;
 const ID_STATUS: usize = 106;
+const ID_UPDATE: usize = 107;
 
 struct App {
     store: LearnStore,
@@ -100,13 +103,25 @@ fn parse_args() -> (String, String) {
     (latin, deva)
 }
 
-fn learn_path() -> std::path::PathBuf {
+fn data_dir() -> std::path::PathBuf {
     let dir = std::env::var_os("APPDATA")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
         .join("xlit");
     let _ = std::fs::create_dir_all(&dir);
-    dir.join("xlit-learn.json")
+    dir
+}
+
+/// The user's own words. Never uploaded.
+fn learn_path() -> std::path::PathBuf {
+    data_dir().join("xlit-learn.json")
+}
+
+/// A local cache of the shared dictionary from prabidhi.bid. Kept apart from
+/// the user's file so a refresh can replace it wholesale without touching
+/// anything they added themselves.
+fn shared_path() -> std::path::PathBuf {
+    data_dir().join("shared.json")
 }
 
 fn wide(s: &str) -> Vec<u16> {
@@ -242,6 +257,16 @@ unsafe fn build_controls(
     );
 
     mk(w!("BUTTON"), w!("Remove selected"), vis, 16, 438, 150, 32, ID_REMOVE);
+    mk(
+        w!("BUTTON"),
+        w!("Update dictionary"),
+        vis,
+        250,
+        438,
+        186,
+        32,
+        ID_UPDATE,
+    );
 
     let store = LearnStore::open(learn_path()).unwrap_or_else(|_| LearnStore::in_memory());
     let engine = Engine::nepali().with_ranker(Box::new(DictRanker::builtin()));
@@ -270,47 +295,52 @@ unsafe fn build_controls(
     _ = SetFocus(Some(if seed_latin.is_empty() { latin } else { deva }));
 }
 
+// A Win32 call made while holding the APP borrow can come straight back into
+// the window procedure - SetWindowTextW on an EDIT control sends EN_CHANGE
+// synchronously, for instance - and the second borrow aborts the process,
+// because this is built panic = "abort". So every function below reads what it
+// needs, drops the borrow, and only then touches a control.
+
 fn refresh_list() {
-    APP.with(|a| {
+    let plan = APP.with(|a| {
         let mut g = a.borrow_mut();
-        let Some(app) = g.as_mut() else { return };
-        app.rows = app
+        let app = g.as_mut()?;
+        let rows: Vec<(String, String)> = app
             .store
             .entries()
             .into_iter()
             .map(|(i, c, _)| (i, c))
             .collect();
-        unsafe {
-            SendMessageW(app.list, LB_RESETCONTENT, None, None);
-            for (latin, deva) in &app.rows {
-                let line = wide(&format!("{latin}   \u{2192}   {deva}"));
-                SendMessageW(
-                    app.list,
-                    LB_ADDSTRING,
-                    None,
-                    Some(LPARAM(line.as_ptr() as isize)),
-                );
-            }
-        }
+        app.rows = rows.clone();
+        Some((app.list, rows))
     });
+    let Some((list, rows)) = plan else { return };
+    unsafe {
+        SendMessageW(list, LB_RESETCONTENT, None, None);
+        for (latin, deva) in &rows {
+            let line = wide(&format!("{latin}   \u{2192}   {deva}"));
+            SendMessageW(list, LB_ADDSTRING, None, Some(LPARAM(line.as_ptr() as isize)));
+        }
+    }
 }
 
 fn set_status(msg: &str) {
-    APP.with(|a| {
-        if let Some(app) = a.borrow().as_ref() {
-            set_text(app.status, msg);
-        }
-    });
+    let h = APP.with(|a| a.borrow().as_ref().map(|app| app.status));
+    if let Some(h) = h {
+        set_text(h, msg);
+    }
 }
 
 /// Fill the Devanagari field with the engine's best guess, until the user
 /// edits it themselves.
 fn suggest() {
-    APP.with(|a| {
+    // Compute under the borrow, write to the control without it: the resulting
+    // EN_CHANGE re-enters wndproc, which needs the borrow to read `suppress`.
+    let plan = APP.with(|a| {
         let mut g = a.borrow_mut();
-        let Some(app) = g.as_mut() else { return };
+        let app = g.as_mut()?;
         if app.deva_touched {
-            return;
+            return None;
         }
         let latin = text_of(app.latin);
         let guess = app
@@ -321,8 +351,14 @@ fn suggest() {
             .map(|c| c.text)
             .unwrap_or_default();
         app.suppress = true;
-        set_text(app.deva, &guess);
-        app.suppress = false;
+        Some((app.deva, guess))
+    });
+    let Some((deva, guess)) = plan else { return };
+    set_text(deva, &guess);
+    APP.with(|a| {
+        if let Some(app) = a.borrow_mut().as_mut() {
+            app.suppress = false;
+        }
     });
 }
 
@@ -350,6 +386,30 @@ fn save() {
         }
         Some(Err(msg)) => set_status(&msg),
         None => {}
+    }
+}
+
+/// Refresh the shared dictionary from prabidhi.bid.
+///
+/// A failure here is never fatal and never a dialog: the endpoint may not
+/// exist, the machine may be offline, and neither should interrupt somebody
+/// adding a word. The status line says what happened and the editor carries on
+/// with whatever it already had.
+fn update_dictionary() {
+    set_status("Checking prabidhi.bid...");
+    match sync::download() {
+        Ok(words) => {
+            let n = words.len();
+            match LearnStore::open(shared_path()).and_then(|s| s.replace_all(&words)) {
+                Ok(()) => set_status(&format!("Dictionary updated - {n} words.")),
+                Err(e) => set_status(&format!("Downloaded {n} words but could not save them: {e}")),
+            }
+        }
+        Err(e) => {
+            // Deliberately low-key: "not available" rather than an error, since
+            // there is nothing for the user to do about it.
+            set_status(&format!("Dictionary not available right now ({e})."));
+        }
     }
 }
 
@@ -386,12 +446,17 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 match (id, note) {
                     (ID_SAVE, _) => save(),
                     (ID_REMOVE, _) => remove_selected(),
+                    (ID_UPDATE, _) => update_dictionary(),
                     (ID_LATIN, n) if n == EN_CHANGE => suggest(),
                     (ID_DEVA, n) if n == EN_CHANGE => {
                         APP.with(|a| {
-                            if let Some(app) = a.borrow_mut().as_mut() {
-                                if !app.suppress {
-                                    app.deva_touched = true;
+                            // try_borrow_mut, not borrow_mut: this path is
+                            // reached re-entrantly and must degrade, not abort.
+                            if let Ok(mut g) = a.try_borrow_mut() {
+                                if let Some(app) = g.as_mut() {
+                                    if !app.suppress {
+                                        app.deva_touched = true;
+                                    }
                                 }
                             }
                         });

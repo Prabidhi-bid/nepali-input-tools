@@ -25,15 +25,26 @@ struct Shared {
 
 static SHARED: OnceLock<Shared> = OnceLock::new();
 
-/// `%APPDATA%\xlit\xlit-learn.json` — per-user, never leaves the machine.
-/// Falls back to the temp directory if `APPDATA` is unset (service accounts).
-fn learn_path() -> PathBuf {
+/// `%APPDATA%\xlit\`, falling back to the temp directory if `APPDATA` is unset
+/// (service accounts).
+fn data_dir() -> PathBuf {
     let dir = std::env::var_os("APPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
         .join("xlit");
     let _ = std::fs::create_dir_all(&dir);
-    dir.join("xlit-learn.json")
+    dir
+}
+
+/// The user's own picks and hand-added words. Never leaves the machine.
+fn learn_path() -> PathBuf {
+    data_dir().join("xlit-learn.json")
+}
+
+/// Local cache of the shared dictionary, refreshed by the word editor's
+/// *Update dictionary* button. Read-only here.
+fn shared_path() -> PathBuf {
+    data_dir().join("shared.json")
 }
 
 fn shared() -> &'static Shared {
@@ -42,9 +53,20 @@ fn shared() -> &'static Shared {
             crate::debug(&format!("learning disabled: {e}"));
             LearnStore::in_memory()
         }));
-        let engine = Engine::nepali()
-            .with_ranker(Box::new(DictRanker::builtin()))
-            .with_ranker(Box::new(SharedLearn(learn.clone())));
+        // Order sets precedence, because each layer only raises scores:
+        // built-in dictionary, then the downloaded one, then the user's own
+        // picks last and highest. A word the user added by hand outranks
+        // anything the server sent, which outranks the compiled-in seed.
+        let mut engine = Engine::nepali().with_ranker(Box::new(DictRanker::builtin()));
+        match LearnStore::open(shared_path()) {
+            Ok(s) if !s.is_empty() => {
+                crate::debug(&format!("shared dictionary: {} words", s.len()));
+                engine = engine.with_ranker(Box::new(SharedLearn(Arc::new(s))));
+            }
+            Ok(_) => {}
+            Err(e) => crate::debug(&format!("no shared dictionary: {e}")),
+        }
+        let engine = engine.with_ranker(Box::new(SharedLearn(learn.clone())));
         crate::debug("engine ready");
         Shared { engine, learn }
     })
