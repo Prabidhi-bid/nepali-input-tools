@@ -45,9 +45,11 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $here     = $PSScriptRoot
-$repoRoot = (Resolve-Path (Join-Path $here '..\..\..')).Path
+$repoRoot = $null
+try { $repoRoot = (Resolve-Path (Join-Path $here '..\..\..') -ErrorAction Stop).Path } catch {}
+if (-not $repoRoot) { throw "run this from inside the repo (couldn't resolve $here\..\..\..)" }
 
-function Free-Locked([string]$path) {
+function Clear-LockedFile([string]$path) {
     if (-not (Test-Path $path)) { return }
     try { Remove-Item $path -Force -ErrorAction Stop }
     catch {
@@ -56,14 +58,23 @@ function Free-Locked([string]$path) {
     }
 }
 
-function Build-Target([string]$triple) {
+# rustup writes its "info: ..." lines to stderr; under $ErrorActionPreference =
+# 'Stop' a redirected native stderr line is turned into a terminating error, so
+# run it once, unredirected, with the preference relaxed.
+function Add-RustTargets {
+    $old = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { rustup target add x86_64-pc-windows-msvc i686-pc-windows-msvc } catch {}
+    $ErrorActionPreference = $old
+}
+
+function Invoke-CargoBuild([string]$triple) {
     $dll = Join-Path $repoRoot "target\$triple\$Configuration\xlit_tsf.dll"
     Get-ChildItem (Split-Path $dll) -Filter 'xlit_tsf.dll.*.old' -ErrorAction SilentlyContinue |
         ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
-    Free-Locked $dll
+    Clear-LockedFile $dll
     Push-Location $repoRoot
     try {
-        & rustup target add $triple *> $null
         $flags = @('build', '-p', 'xlit-tsf', '--target', $triple)
         if ($Configuration -eq 'release') { $flags += '--release' }
         & cargo @flags
@@ -112,8 +123,10 @@ function Resolve-Iscc {
     return $null
 }
 
+Add-RustTargets
+
 Write-Host "==> building x64 (x86_64-pc-windows-msvc, $Configuration)" -ForegroundColor Cyan
-$dllX64 = Build-Target 'x86_64-pc-windows-msvc'
+$dllX64 = Invoke-CargoBuild 'x86_64-pc-windows-msvc'
 
 $dllX86 = $null
 if ($SkipX86) {
@@ -121,7 +134,7 @@ if ($SkipX86) {
 } else {
     Write-Host "==> building x86 (i686-pc-windows-msvc, $Configuration)" -ForegroundColor Cyan
     try {
-        $dllX86 = Build-Target 'i686-pc-windows-msvc'
+        $dllX86 = Invoke-CargoBuild 'i686-pc-windows-msvc'
     } catch {
         Write-Warning "x86 build failed ($_). Continuing x64-only - install the x86 MSVC toolchain to fix."
         $dllX86 = $null
@@ -149,6 +162,11 @@ Write-Host "==> $(Split-Path $iscc -Leaf) xlit-tsf.iss" -ForegroundColor Cyan
 if ($LASTEXITCODE) { throw "iscc failed ($LASTEXITCODE)" }
 
 $out = Join-Path $here "Input-by-Prabidhi.bid-$Version-setup.exe"
+if (-not (Test-Path $out)) {
+    $found = Get-ChildItem $here -Filter '*setup.exe' -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($found) { $out = $found.FullName } else { throw "iscc reported success but no setup .exe found under $here" }
+}
 Write-Host ''
 Write-Host ("built {0}  ({1})" -f $out, $(if ($dllX86) { 'x64 + x86' } else { 'x64 only' })) -ForegroundColor Green
 Write-Host 'Sign it before distributing:  signtool sign /fd sha256 /a /tr http://timestamp.digicert.com /td sha256 "<setup.exe>"'

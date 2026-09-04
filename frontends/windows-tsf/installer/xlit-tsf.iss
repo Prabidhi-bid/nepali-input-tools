@@ -67,6 +67,9 @@ Password={#SetupPassword}
 ; SignTool=standard
 ; SignedUninstaller=yes
 
+[Languages]
+Name: "en"; MessagesFile: "compiler:Default.isl"
+
 [Files]
 ; x64 DLL -> {app} (64-bit install mode only)
 Source: "{#DllPathX64}"; DestDir: "{app}"; DestName: "xlit_tsf.dll"; \

@@ -22,7 +22,7 @@
     next sign-out.
 
 .PARAMETER NoBuild
-    Skip cargo; use target\<triple>\<cfg>\xlit_tsf.dll, or bundled xlit_tsf.dll
+    Skip cargo; use target\<triple>\<cfg>\xlit_tsf.dll, or a bundled xlit_tsf.dll
     (x64) / xlit_tsf.x86.dll next to this script.
 
 .PARAMETER SkipX86
@@ -67,13 +67,15 @@ if (-not (Test-Admin)) {
     if ($NoBuild) { $argv += '-NoBuild' }
     if ($SkipX86) { $argv += '-SkipX86' }
     try { Start-Process powershell.exe -ArgumentList $argv -Verb RunAs }
-    catch { Write-Error 'Elevation was cancelled or denied.'; exit 1 }
+    catch { Write-Host 'Elevation was cancelled or denied.' -ForegroundColor Red; exit 1 }
     exit 0
 }
 
 # --- elevated from here -----------------------------------------------------------
 $here     = $PSScriptRoot
-$repoRoot = (Resolve-Path (Join-Path $here '..\..\..')).Path
+$repoRoot = $null
+try { $repoRoot = (Resolve-Path (Join-Path $here '..\..\..') -ErrorAction Stop).Path } catch {}
+
 # native (64-bit) System32 even if this happens to be a 32-bit PowerShell;
 # SysWOW64 is always the 32-bit one.
 $sysNative = Join-Path $env:windir 'System32'
@@ -83,18 +85,29 @@ if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProces
 $RegsvrNative = Join-Path $sysNative 'regsvr32.exe'
 $Regsvr32bit  = Join-Path $env:windir 'SysWOW64\regsvr32.exe'
 
-function Clear-Dll([string]$path) {
+# rustup writes "info: ..." to stderr; under $ErrorActionPreference='Stop' a
+# *redirected* native stderr line becomes a terminating error, so run it once,
+# unredirected, with the preference relaxed. Never redirect a native command's
+# stderr anywhere else in this script for the same reason.
+function Add-RustTargets {
+    if ($NoBuild) { return }
+    $old = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { rustup target add x86_64-pc-windows-msvc i686-pc-windows-msvc } catch {}
+    $ErrorActionPreference = $old
+}
+
+function Clear-LockedFile([string]$path) {
     if (-not (Test-Path $path)) { return }
     try {
         Remove-Item $path -Force -ErrorAction Stop
     } catch {
-        $aside = "$path.$(Get-Date -Format yyyyMMddHHmmss).old"
-        Rename-Item $path $aside -Force
+        Rename-Item $path "$path.$(Get-Date -Format yyyyMMddHHmmss).old" -Force
         Write-Host "    ($(Split-Path $path -Leaf) in use - renamed aside)" -ForegroundColor DarkGray
     }
 }
 
-# The arch layout for this OS.
+# --- arch layout for this OS ----------------------------------------------------
 $is64 = [Environment]::Is64BitOperatingSystem
 $targets = @()
 if ($is64) {
@@ -114,27 +127,29 @@ else {
 }
 
 function Resolve-Source($t) {
-    $built = Join-Path $repoRoot "target\$($t.Triple)\$Configuration\xlit_tsf.dll"
+    $built = if ($repoRoot) { Join-Path $repoRoot "target\$($t.Triple)\$Configuration\xlit_tsf.dll" } else { $null }
     if (-not $NoBuild) {
+        if (-not $repoRoot) { throw "not in the repo tree - re-run with -NoBuild and a bundled DLL" }
         Write-Host "==> cargo build -p xlit-tsf --target $($t.Triple) ($Configuration)" -ForegroundColor Cyan
-        & $t.Regsvr /s /u $built 2>$null
-        Clear-Dll $built
+        & $t.Regsvr /s /u $built            # best-effort deregister of a prior in-tree reg
+        Clear-LockedFile $built
         Push-Location $repoRoot
         try {
-            & rustup target add $t.Triple *> $null
             $flags = @('build', '-p', 'xlit-tsf', '--target', $t.Triple)
             if ($Configuration -eq 'release') { $flags += '--release' }
             & cargo @flags
             if ($LASTEXITCODE) { throw "cargo build ($($t.Name)) failed ($LASTEXITCODE)" }
         } finally { Pop-Location }
+        if (-not (Test-Path $built)) { throw "cargo reported success but $built is missing" }
         return $built
     }
-    if (Test-Path $t.Bundled) { return $t.Bundled }
-    if (Test-Path $built)     { return $built }
-    throw "no $($t.Name) xlit_tsf.dll - build without -NoBuild, or place one at $built / $($t.Bundled)"
+    if (Test-Path $t.Bundled)              { return $t.Bundled }
+    if ($built -and (Test-Path $built))    { return $built }
+    throw "no $($t.Name) xlit_tsf.dll - build without -NoBuild, or place one next to this script"
 }
 
 try {
+    Add-RustTargets
     foreach ($p in $HostProcs) { Stop-Process -Name $p -Force -ErrorAction SilentlyContinue }
     Start-Sleep -Milliseconds 400
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
@@ -150,8 +165,8 @@ try {
         }
         Write-Host "==> installing $($t.Name) -> $($t.Dest)" -ForegroundColor Cyan
         New-Item -ItemType Directory -Force -Path (Split-Path $t.Dest) | Out-Null
-        & $t.Regsvr /s /u $t.Dest 2>$null        # deregister a previous copy
-        Clear-Dll $t.Dest
+        & $t.Regsvr /s /u $t.Dest                # deregister a previous copy (silent, best-effort)
+        Clear-LockedFile $t.Dest
         Copy-Item $src $t.Dest -Force
         Write-Host "==> $(Split-Path $t.Regsvr -Leaf) /s ($($t.Name))" -ForegroundColor Cyan
         & $t.Regsvr /s $t.Dest
@@ -160,17 +175,27 @@ try {
     }
     if (-not $installed) { throw 'nothing installed' }
 
-    Copy-Item (Join-Path $here 'uninstall.ps1') (Join-Path $InstallDir 'uninstall.ps1') -Force
+    # copy the uninstaller alongside the DLLs (needed by the Apps & features entry)
+    $uninstSrc = Join-Path $here 'uninstall.ps1'
+    $uninstDst = Join-Path $InstallDir 'uninstall.ps1'
+    if (Test-Path $uninstSrc) {
+        Copy-Item $uninstSrc $uninstDst -Force
+    } else {
+        Write-Warning "uninstall.ps1 not found next to install.ps1 - Apps & features 'Uninstall' will not work; keep both files together."
+    }
 
     # Apps & features entry
-    $uninstCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $InstallDir 'uninstall.ps1')`""
+    $uninstCmd  = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$uninstDst`""
+    $sizeKb     = [int](((Get-Item ($installed.Dest)) | Measure-Object Length -Sum).Sum / 1024)
     New-Item -Path $UninstallRK -Force | Out-Null
     Set-ItemProperty $UninstallRK DisplayName          $AppName
     Set-ItemProperty $UninstallRK DisplayVersion       $AppVersion
     Set-ItemProperty $UninstallRK Publisher            $Publisher
     Set-ItemProperty $UninstallRK InstallLocation      $InstallDir
+    Set-ItemProperty $UninstallRK DisplayIcon          ($installed[0].Dest)
     Set-ItemProperty $UninstallRK UninstallString      $uninstCmd
     Set-ItemProperty $UninstallRK QuietUninstallString $uninstCmd
+    Set-ItemProperty $UninstallRK EstimatedSize        $sizeKb -Type DWord
     Set-ItemProperty $UninstallRK NoModify 1 -Type DWord
     Set-ItemProperty $UninstallRK NoRepair 1 -Type DWord
 
@@ -197,8 +222,11 @@ try {
     $code = 0
 }
 catch {
+    # Write-Error would itself throw under $ErrorActionPreference='Stop' and
+    # skip the pause below, so the elevated window would vanish with the error.
     Write-Host ''
-    Write-Error $_
+    Write-Host "ERROR: $_" -ForegroundColor Red
+    Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
     $code = 1
 }
 

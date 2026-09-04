@@ -39,7 +39,7 @@ if ($PSCommandPath -like "$InstallDir*") {
     Copy-Item $PSCommandPath $tmp -Force
     $argv = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$tmp`"")
     if ($Elevated) { $argv += '-Elevated' }
-    Start-Process powershell.exe -ArgumentList $argv
+    Start-Process powershell.exe -ArgumentList $argv -WindowStyle Hidden
     exit 0
 }
 
@@ -48,7 +48,7 @@ if (-not (Test-Admin)) {
     Write-Host 'Requesting administrator elevation...' -ForegroundColor Cyan
     $argv = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Elevated')
     try { Start-Process powershell.exe -ArgumentList $argv -Verb RunAs }
-    catch { Write-Error 'Elevation was cancelled or denied.'; exit 1 }
+    catch { Write-Host 'Elevation was cancelled or denied.' -ForegroundColor Red; exit 1 }
     exit 0
 }
 
@@ -139,7 +139,7 @@ try {
 }
 catch {
     Write-Host ''
-    Write-Error $_
+    Write-Host "ERROR: $_" -ForegroundColor Red
     $code = 1
 }
 
