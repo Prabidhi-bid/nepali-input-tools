@@ -146,6 +146,7 @@ impl ITfKeyEventSink_Impl for KeyEventSink_Impl {
     /// takes input has its own session and its own bar; showing it only while
     /// this document holds focus means exactly one is ever on screen.
     fn OnSetFocus(&self, fforeground: BOOL) -> Result<()> {
+        crate::debug(&format!("OnSetFocus foreground={}", fforeground.as_bool()));
         let weak = std::rc::Rc::downgrade(&self.sess);
         let mut s = self.sess.borrow_mut();
         // The candidate popup belongs to the document we just left.
@@ -188,6 +189,7 @@ impl ITfKeyEventSink_Impl for KeyEventSink_Impl {
         };
         let vk = (wparam.0 & 0xFFFF) as u16;
         let scan = ((lparam.0 >> 16) & 0xFF) as u32;
+        crate::debug(&format!("OnKeyDown vk=0x{vk:02X} composing={composing}"));
 
         match classify(vk, scan, composing, ncands) {
             Action::Ignore => return Ok(BOOL(0)),

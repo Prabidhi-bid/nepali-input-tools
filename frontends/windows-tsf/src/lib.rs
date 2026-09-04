@@ -74,14 +74,40 @@ pub(crate) fn dll_path() -> String {
     String::from_utf16_lossy(&buf[..n])
 }
 
-/// Emit a trace line to the Win32 debugger (DebugView). Compiled to a no-op
-/// unless the `trace` feature is set, so release / installer builds don't leak
-/// internal flow. Re-enable for troubleshooting with `--features trace`.
+/// Emit a trace line, to the Win32 debugger (DebugView) *and* to
+/// `%APPDATA%\xlit\xlit-tsf.log`.
+///
+/// The file matters more than the debugger in practice: this DLL runs inside
+/// other people's processes on someone else's machine, where attaching a
+/// debugger is a big ask and a log that can be read afterwards is not.
+///
+/// Compiled to a no-op unless the `trace` feature is set, so release and
+/// installer builds neither leak internal flow nor touch the disk on every
+/// keystroke. Troubleshoot with `--features trace`.
 #[cfg(feature = "trace")]
 pub(crate) fn debug(msg: &str) {
     let mut w: Vec<u16> = format!("[xlit-tsf] {msg}\r\n").encode_utf16().collect();
     w.push(0);
     unsafe { windows::Win32::System::Diagnostics::Debug::OutputDebugStringW(PCWSTR(w.as_ptr())) };
+
+    // Best-effort and never fatal: a failed trace write must not disturb the
+    // application we are living inside. Every process appends, so the line
+    // carries the process id to keep them apart.
+    use std::io::Write;
+    let Some(appdata) = std::env::var_os("APPDATA") else { return };
+    let dir = std::path::PathBuf::from(appdata).join("xlit");
+    let _ = std::fs::create_dir_all(&dir);
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("xlit-tsf.log"))
+    {
+        let exe = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "?".into());
+        let _ = writeln!(f, "[{}:{}] {msg}", exe, std::process::id());
+    }
 }
 
 #[cfg(not(feature = "trace"))]
@@ -128,6 +154,7 @@ extern "system" fn DllGetClassObject(
         if *rclsid != CLSID_XLIT {
             return CLASS_E_CLASSNOTAVAILABLE;
         }
+        debug("DllGetClassObject: our CLSID requested");
         let factory: IClassFactory = ClassFactory.into();
         factory.query(riid, ppv)
     }
@@ -172,6 +199,7 @@ impl IClassFactory_Impl for ClassFactory_Impl {
         if !punkouter.is_null() {
             return Err(CLASS_E_NOAGGREGATION.into());
         }
+        crate::debug("CreateInstance: text service created");
         let service: ITfTextInputProcessor = TextService::new().into();
         unsafe { service.query(riid, ppvobject).ok() }
     }

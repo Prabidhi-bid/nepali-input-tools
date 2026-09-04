@@ -145,14 +145,33 @@ function Invoke-Regsvr32 {
     return $p.ExitCode
 }
 
+# A DLL still mapped by a running application cannot be deleted. It can almost
+# always be *renamed* out of the way, which frees the name for the new copy
+# while the old image stays mapped until that process exits. Returns whether the
+# path is now free.
+#
+# Rename-Item wants a bare name, not a path - passing a full path fails.
 function Clear-LockedFile([string]$path) {
-    if (-not (Test-Path $path)) { return }
+    if (-not (Test-Path $path)) { return $true }
     try {
         Remove-Item $path -Force -ErrorAction Stop
-    } catch {
-        Rename-Item $path "$path.$(Get-Date -Format yyyyMMddHHmmss).old" -Force
+        return $true
+    } catch {}
+    try {
+        Rename-Item -LiteralPath $path -NewName "$(Split-Path $path -Leaf).$(Get-Date -Format yyyyMMddHHmmss).old" -Force -ErrorAction Stop
         Write-Host "    ($(Split-Path $path -Leaf) in use - renamed aside)" -ForegroundColor DarkGray
-    }
+        return $true
+    } catch {}
+    Write-Warning "$(Split-Path $path -Leaf) is locked and could not be moved aside."
+    return $false
+}
+
+# Sweep the *.old copies left behind by earlier runs, once their processes have
+# gone. Best-effort; the ones still mapped simply stay until the next sign-out.
+function Remove-StaleCopies([string]$dir) {
+    if (-not (Test-Path $dir)) { return }
+    Get-ChildItem $dir -Recurse -Filter '*.old' -ErrorAction SilentlyContinue |
+        ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
 }
 
 # --- arch layout for this OS ----------------------------------------------------
@@ -239,20 +258,47 @@ try {
     }
     if (-not $installed) { throw 'nothing installed' }
 
+    # Stage every new DLL beside its destination *before* deregistering
+    # anything. Writing a brand new file always works; replacing a mapped one
+    # may not, and finding that out after deregistering would leave the input
+    # method unregistered - which is exactly how it kept vanishing.
+    foreach ($t in $installed) {
+        New-Item -ItemType Directory -Force -Path (Split-Path $t.Dest) | Out-Null
+        Copy-Item $t.Src "$($t.Dest).new" -Force
+    }
+
     foreach ($t in $installed) {
         Invoke-Regsvr32 -Exe $t.Regsvr -Dll $t.Dest -Unregister | Out-Null   # best-effort
     }
+    # Deregistering tells the input hosts to let go; give them a moment to
+    # actually unmap before trying to move the file.
+    foreach ($p in $HostProcs) { Stop-Process -Name $p -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Milliseconds 600
+
     foreach ($t in $installed) {
         Write-Host "==> installing $($t.Name) -> $($t.Dest)" -ForegroundColor Cyan
-        New-Item -ItemType Directory -Force -Path (Split-Path $t.Dest) | Out-Null
-        Clear-LockedFile $t.Dest
-        Copy-Item $t.Src $t.Dest -Force
+        if (Clear-LockedFile $t.Dest) {
+            Move-Item "$($t.Dest).new" $t.Dest -Force
+        }
+        else {
+            # Keep the copy that is already there and register that instead of
+            # aborting: an older build still working beats no input method.
+            Remove-Item "$($t.Dest).new" -Force -ErrorAction SilentlyContinue
+            if (Test-Path $t.Dest) {
+                Write-Warning "$($t.Name): kept the installed copy - close your apps or sign out and re-run to update it."
+            }
+            else {
+                throw "$($t.Name): could not write $($t.Dest)"
+            }
+        }
     }
+
     foreach ($t in $installed) {
         Write-Host "==> $(Split-Path $t.Regsvr -Leaf) /s ($($t.Name))" -ForegroundColor Cyan
         $rc = Invoke-Regsvr32 -Exe $t.Regsvr -Dll $t.Dest
         if ($rc) { throw "regsvr32 ($($t.Name)) failed ($rc)" }
     }
+    Remove-StaleCopies $InstallDir
 
     # The profile is what the language switcher reads through; if it is missing
     # here, adding the keyboard below would silently do nothing.
