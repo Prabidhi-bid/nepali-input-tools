@@ -17,7 +17,10 @@ powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\build-s
 ```
 
 → `installer\Input-by-Prabidhi.bid-<ver>-setup.exe`, DLL embedded. Options:
-`-Version 0.2.0`, `-Configuration debug`, `-Password <pw>` (encrypt payload).
+`-Version 0.2.0`, `-Configuration debug`, `-Password <pw>` (encrypt payload),
+`-Iscc "<path>\ISCC.exe"` (if auto-detection misses it — e.g. Inno was added to
+PATH after this shell started; the script also checks Inno's registry install
+location and the usual folders).
 
 [`xlit-tsf.iss`](xlit-tsf.iss) installs to `%ProgramFiles%\Prabidhi.bid Input\`,
 runs `regsvr32 /s` on install and `/s /u` on uninstall, recycles

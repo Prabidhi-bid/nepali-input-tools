@@ -21,6 +21,10 @@
     If given, encrypt the installer's embedded payload (Inno `Encryption`).
     Speed-bump only - see installer/README.md.
 
+.PARAMETER Iscc
+    Full path to ISCC.exe (or its folder) when auto-detection fails, e.g. when
+    Inno Setup was added to PATH after this shell started.
+
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\build-setup.ps1
 #>
@@ -28,9 +32,58 @@
 param(
     [string]$Version = '0.1.0',
     [ValidateSet('release', 'debug')][string]$Configuration = 'release',
-    [string]$Password
+    [string]$Password,
+    [string]$Iscc                       # explicit path to ISCC.exe (or its folder)
 )
 $ErrorActionPreference = 'Stop'
+
+function Resolve-Iscc {
+    param([string]$Explicit)
+
+    if ($Explicit) {
+        if (Test-Path $Explicit -PathType Leaf) { return (Resolve-Path $Explicit).Path }
+        $c = Join-Path $Explicit 'ISCC.exe'
+        if (Test-Path $c -PathType Leaf) { return $c }
+        throw "ISCC.exe not found at -Iscc '$Explicit'"
+    }
+
+    # 1. this session's PATH
+    $g = Get-Command 'ISCC.exe' -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($g) { return $g.Source }
+
+    # 2. gather candidate folders: persisted PATH (catches a PATH edit made
+    #    after this shell started), Inno's registry install location, defaults
+    $dirs = New-Object System.Collections.Generic.List[string]
+    foreach ($scope in 'Machine', 'User') {
+        $p = [Environment]::GetEnvironmentVariable('Path', $scope)
+        if ($p) { $p.Split(';') | ForEach-Object { $dirs.Add($_) } }
+    }
+    foreach ($rk in @(
+            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1',
+            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1',
+            'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1',
+            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 5_is1',
+            'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 5_is1')) {
+        try {
+            $loc = (Get-ItemProperty -LiteralPath $rk -ErrorAction Stop).InstallLocation
+            if ($loc) { $dirs.Add($loc) }
+        } catch {}
+    }
+    $pf86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+    foreach ($d in @(
+            "$pf86\Inno Setup 6", "$env:ProgramFiles\Inno Setup 6",
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6",
+            "$pf86\Inno Setup 5", "$env:ProgramFiles\Inno Setup 5")) {
+        $dirs.Add($d)
+    }
+
+    foreach ($d in ($dirs | Where-Object { $_ } | Select-Object -Unique)) {
+        $c = Join-Path ($d.Trim().TrimEnd('\')) 'ISCC.exe'
+        if (Test-Path $c -PathType Leaf) { return $c }
+    }
+    return $null
+}
 
 $here     = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $here '..\..\..')).Path
@@ -66,17 +119,18 @@ try {
 if (-not (Test-Path $dll)) { throw "DLL not found: $dll" }
 
 # locate the Inno Setup compiler
-$iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
+$iscc = Resolve-Iscc -Explicit $Iscc
 if (-not $iscc) {
-    foreach ($p in @(
-            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
-            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe")) {
-        if (Test-Path $p) { $iscc = $p; break }
-    }
+    throw @'
+Inno Setup (ISCC.exe) not found. Either install it:
+    winget install JRSoftware.InnoSetup
+or point at it directly:
+    build-setup.ps1 -Iscc "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+If you just added Inno Setup to PATH, open a NEW terminal (this one has the
+old PATH) or use -Iscc.
+'@
 }
-if (-not $iscc) {
-    throw "Inno Setup not found. Install it with:  winget install JRSoftware.InnoSetup"
-}
+Write-Host "using $iscc" -ForegroundColor DarkGray
 
 $isccArgs = @("/DDllPath=$dll", "/DAppVersion=$Version")
 if ($Password) { $isccArgs += "/DSetupPassword=$Password" }
