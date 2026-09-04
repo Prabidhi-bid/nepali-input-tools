@@ -90,13 +90,14 @@ impl Engine {
     pub fn candidates(&self, input: &str) -> Vec<Candidate> {
         let mut cands = Vec::new();
 
-        let t = self.rule.transliterate(input);
-        if !t.is_empty() && t != input {
-            cands.push(Candidate {
-                text: t,
-                source: Source::Rule,
-                score: 100,
-            });
+        // Primary literal transliteration at 100; orthographic variants (e.g.
+        // the de-geminated form of a loanword) just below it, so they only
+        // surface when a later layer — the dictionary — confirms them as words.
+        for (rank, t) in self.rule.transliterate_variants(input).into_iter().enumerate() {
+            if !t.is_empty() && t != input {
+                let score = if rank == 0 { 100 } else { 96 };
+                merge_candidate(&mut cands, t, score, Source::Rule);
+            }
         }
         cands.push(Candidate {
             text: input.to_string(),
@@ -137,5 +138,28 @@ mod tests {
         assert_eq!(c[0].text, "नमस्ते");
         assert_eq!(c[0].source, Source::Rule);
         assert_eq!(c.last().unwrap().text, "namaste");
+    }
+
+    #[test]
+    fn geminate_variant_is_offered_but_not_promoted() {
+        // With no dictionary the literal conjunct stays on top; the
+        // de-geminated loanword form is still present as a lower candidate.
+        let e = Engine::nepali();
+        let c = e.candidates("hello");
+        assert_eq!(c[0].text, "हेल्लो");
+        let texts: Vec<_> = c.iter().map(|x| x.text.as_str()).collect();
+        assert!(texts.contains(&"हेलो"), "got {texts:?}");
+    }
+
+    #[test]
+    fn nasal_conjunct_variant_is_a_candidate() {
+        // "raviiMdra" (Hindi-style anusvara) still offers the Nepali रवीन्द्र.
+        let e = Engine::nepali();
+        let texts: Vec<_> = e
+            .candidates("raviiMdra")
+            .iter()
+            .map(|x| x.text.clone())
+            .collect();
+        assert!(texts.contains(&"रवीन्द्र".to_string()), "got {texts:?}");
     }
 }

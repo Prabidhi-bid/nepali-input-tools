@@ -12,7 +12,10 @@ use windows::Win32::System::Com::{
 };
 use windows::Win32::UI::TextServices::{
     ITfCategoryMgr, ITfInputProcessorProfiles, CLSID_TF_CategoryMgr,
-    CLSID_TF_InputProcessorProfiles, GUID_TFCAT_TIP_KEYBOARD,
+    CLSID_TF_InputProcessorProfiles, GUID_TFCAT_TIPCAP_COMLESS,
+    GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT, GUID_TFCAT_TIPCAP_INPUTMODECOMPARTMENT,
+    GUID_TFCAT_TIPCAP_SECUREMODE, GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT,
+    GUID_TFCAT_TIPCAP_UIELEMENTENABLED, GUID_TFCAT_TIP_KEYBOARD,
 };
 use winreg::enums::HKEY_LOCAL_MACHINE;
 use winreg::RegKey;
@@ -87,10 +90,15 @@ pub(crate) fn register() -> Result<()> {
             &[], // no icon file yet
             0,
         )?;
+        // AddLanguageProfile leaves the profile disabled; without this it never
+        // shows in the taskbar language flyout or Win+Space.
+        profiles.EnableLanguageProfile(&CLSID_XLIT, LANGID_NE_NP, &GUID_PROFILE, true)?;
 
         let categories: ITfCategoryMgr =
             CoCreateInstance(&CLSID_TF_CategoryMgr, None, CLSCTX_INPROC_SERVER)?;
-        categories.RegisterCategory(&CLSID_XLIT, &GUID_TFCAT_TIP_KEYBOARD, &CLSID_XLIT)?;
+        for cat in CATEGORIES {
+            categories.RegisterCategory(&CLSID_XLIT, cat, &CLSID_XLIT)?;
+        }
     }
 
     crate::debug("registered");
@@ -104,7 +112,9 @@ pub(crate) fn unregister() -> Result<()> {
         if let Ok(categories) =
             CoCreateInstance::<_, ITfCategoryMgr>(&CLSID_TF_CategoryMgr, None, CLSCTX_INPROC_SERVER)
         {
-            let _ = categories.UnregisterCategory(&CLSID_XLIT, &GUID_TFCAT_TIP_KEYBOARD, &CLSID_XLIT);
+            for cat in CATEGORIES {
+                let _ = categories.UnregisterCategory(&CLSID_XLIT, cat, &CLSID_XLIT);
+            }
         }
         if let Ok(profiles) = CoCreateInstance::<_, ITfInputProcessorProfiles>(
             &CLSID_TF_InputProcessorProfiles,
@@ -118,6 +128,20 @@ pub(crate) fn unregister() -> Result<()> {
     crate::debug("unregistered");
     Ok(())
 }
+
+/// Categories this text service claims. `GUID_TFCAT_TIP_KEYBOARD` makes it a
+/// keyboard TIP; the `TIPCAP_*` entries tell Windows 8+ it is safe to surface in
+/// immersive/UWP contexts and the taskbar input indicator. Without
+/// `IMMERSIVESUPPORT` the modern switcher hides the profile entirely.
+const CATEGORIES: &[GUID] = &[
+    GUID_TFCAT_TIP_KEYBOARD,
+    GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT,
+    GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT,
+    GUID_TFCAT_TIPCAP_UIELEMENTENABLED,
+    GUID_TFCAT_TIPCAP_SECUREMODE,
+    GUID_TFCAT_TIPCAP_COMLESS,
+    GUID_TFCAT_TIPCAP_INPUTMODECOMPARTMENT,
+];
 
 // Keep the GUID import meaningful for future icon/profile work.
 #[allow(dead_code)]

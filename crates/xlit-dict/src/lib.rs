@@ -163,60 +163,69 @@ fn bounded_levenshtein(a: &[char], b: &[char], max: usize) -> Option<usize> {
 
 impl<D: AsRef<[u8]> + Send + Sync> Ranker for DictRanker<D> {
     fn rank(&self, _input: &str, mut cands: Vec<Candidate>) -> Vec<Candidate> {
-        let word = match cands.iter().find(|c| c.source == Source::Rule) {
-            Some(c) => c.text.clone(),
-            None => return cands,
-        };
-        if word.is_empty() {
+        // Validate every literal form the rule engine offered — the primary
+        // transliteration *and* any orthographic variant (e.g. the de-geminated
+        // spelling of a loanword). A variant only rises if the dictionary
+        // vouches for it.
+        let mut words: Vec<String> = cands
+            .iter()
+            .filter(|c| c.source == Source::Rule && !c.text.is_empty())
+            .map(|c| c.text.clone())
+            .collect();
+        words.dedup();
+        if words.is_empty() {
             return cands;
         }
-        let word_len = word.chars().count();
 
-        // 1. exact match
-        if let Some(freq) = self.map.get(word.as_bytes()) {
-            merge_candidate(
-                &mut cands,
-                word.clone(),
-                300 + freq_bonus(freq),
-                Source::Dictionary,
-            );
-        }
+        for word in words {
+            let word_len = word.chars().count();
 
-        // 2. fuzzy match (typo correction) — bounded edit-distance scan.
-        {
-            let q: Vec<char> = word.chars().collect();
-            let maxd = self.opts.max_edit_distance as usize;
-            let mut hits: Vec<(String, u64)> = Vec::new();
-            let mut stream = self.map.stream();
-            while let Some((k, v)) = stream.next() {
-                let Ok(s) = std::str::from_utf8(k) else { continue };
-                if s == word {
-                    continue;
+            // 1. exact match
+            if let Some(freq) = self.map.get(word.as_bytes()) {
+                merge_candidate(
+                    &mut cands,
+                    word.clone(),
+                    300 + freq_bonus(freq),
+                    Source::Dictionary,
+                );
+            }
+
+            // 2. fuzzy match (typo correction) — bounded edit-distance scan.
+            {
+                let q: Vec<char> = word.chars().collect();
+                let maxd = self.opts.max_edit_distance as usize;
+                let mut hits: Vec<(String, u64)> = Vec::new();
+                let mut stream = self.map.stream();
+                while let Some((k, v)) = stream.next() {
+                    let Ok(s) = std::str::from_utf8(k) else { continue };
+                    if s == word {
+                        continue;
+                    }
+                    let sc: Vec<char> = s.chars().collect();
+                    if sc.len().abs_diff(q.len()) > maxd {
+                        continue;
+                    }
+                    if bounded_levenshtein(&q, &sc, maxd).is_some() {
+                        hits.push((s.to_string(), v));
+                    }
                 }
-                let sc: Vec<char> = s.chars().collect();
-                if sc.len().abs_diff(q.len()) > maxd {
-                    continue;
-                }
-                if bounded_levenshtein(&q, &sc, maxd).is_some() {
-                    hits.push((s.to_string(), v));
+                hits.sort_by(|a, b| b.1.cmp(&a.1));
+                for (s, v) in hits.into_iter().take(self.opts.max_fuzzy) {
+                    // same-length hits are substitutions (vowel length, nasal,
+                    // sibilant) — the common typo class; nudge them above
+                    // insertions/deletions of similar frequency.
+                    let same_len = s.chars().count() == word_len;
+                    let score = 200 + freq_bonus(v) + if same_len { 15 } else { 0 };
+                    merge_candidate(&mut cands, s, score, Source::Dictionary);
                 }
             }
-            hits.sort_by(|a, b| b.1.cmp(&a.1));
-            for (s, v) in hits.into_iter().take(self.opts.max_fuzzy) {
-                // same-length hits are substitutions (vowel length, nasal,
-                // sibilant) — the common typo class; nudge them above
-                // insertions/deletions of similar frequency.
-                let same_len = s.chars().count() == word_len;
-                let score = 200 + freq_bonus(v) + if same_len { 15 } else { 0 };
-                merge_candidate(&mut cands, s, score, Source::Dictionary);
-            }
-        }
 
-        // 3. prefix completions
-        if word_len >= 2 {
-            let pfx = Str::new(word.as_str()).starts_with();
-            for (s, v) in self.collect(pfx, &word, self.opts.max_completions) {
-                merge_candidate(&mut cands, s, 90 + freq_bonus(v) / 2, Source::Dictionary);
+            // 3. prefix completions
+            if word_len >= 2 {
+                let pfx = Str::new(word.as_str()).starts_with();
+                for (s, v) in self.collect(pfx, &word, self.opts.max_completions) {
+                    merge_candidate(&mut cands, s, 90 + freq_bonus(v) / 2, Source::Dictionary);
+                }
             }
         }
 
@@ -284,5 +293,57 @@ mod tests {
         // a nonsense string the dict has never seen: rule output still wins
         let c = engine().candidates("xyzqwq");
         assert_eq!(c[0].source, Source::Rule);
+    }
+
+    #[test]
+    fn loanword_degeminated_variant_wins() {
+        // rule engine: "hello" -> हेल्लो (literal) + हेलो (de-geminated variant);
+        // हेलो is a seed loanword, so the dictionary promotes it to the top.
+        let c = engine().candidates("hello");
+        assert_eq!(c[0].text, "हेलो");
+        assert_eq!(c[0].source, Source::Dictionary);
+    }
+
+    #[test]
+    fn different_consonant_conjunct_survives() {
+        // क्र is two distinct consonants — the de-gemination pass must not touch
+        // it, and the exact seed spelling क्रिकेट should come back on top.
+        let c = engine().candidates("kriket");
+        assert_eq!(c[0].text, "क्रिकेट");
+        assert_eq!(c[0].source, Source::Dictionary);
+    }
+
+    #[test]
+    fn degeminated_variant_stays_down_when_not_a_word() {
+        // "briffo": neither the literal ब्रिफ्फो nor its de-geminated form ब्रिफो
+        // is a dictionary word, so the literal transliteration stays on top.
+        let c = engine().candidates("briffo");
+        assert_eq!(c[0].text, "ब्रिफ्फो");
+        assert_eq!(c[0].source, Source::Rule);
+    }
+
+    #[test]
+    fn hindi_style_name_normalizes_to_nepali() {
+        // "raviiMdranaath" -> रवींद्रनाथ literally; the nasal-conjunct variant
+        // रवीन्द्रनाथ is a seed proper noun, so it wins.
+        let c = engine().candidates("raviiMdranaath");
+        assert_eq!(c[0].text, "रवीन्द्रनाथ");
+        assert_eq!(c[0].source, Source::Dictionary);
+    }
+
+    #[test]
+    fn anusvara_loanword_normalizes_to_nepali_spelling() {
+        // "aMgrejii" -> अंग्रेजी literally; Nepali अङ्ग्रेजी (ङ् conjunct) is the
+        // seed spelling and should come out on top.
+        let c = engine().candidates("aMgrejii");
+        assert_eq!(c[0].text, "अङ्ग्रेजी");
+        assert_eq!(c[0].source, Source::Dictionary);
+    }
+
+    #[test]
+    fn anusvara_before_sibilant_kept() {
+        // संसार keeps its anusvara — there is no स-homorganic nasal.
+        let c = engine().candidates("saMsaar");
+        assert_eq!(c[0].text, "संसार");
     }
 }

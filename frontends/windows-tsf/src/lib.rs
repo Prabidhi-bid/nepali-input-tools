@@ -34,7 +34,8 @@ pub(crate) const GUID_PROFILE: GUID = GUID::from_u128(0x4BE59555_69DD_48CA_8BC8_
 pub(crate) const LANGID_NE_NP: u16 = 0x0461;
 
 pub(crate) const CLSID_XLIT_STR: &str = "{438E43E4-3800-4AB1-82A6-A2E831ABF107}";
-pub(crate) const SERVICE_DESC: &str = "xlit Nepali (phonetic)";
+/// Display name shown in the Windows language bar / keyboard list.
+pub(crate) const SERVICE_DESC: &str = "Input by Prabidhi.bid";
 
 // ---------------------------------------------------------------------------
 // Module state

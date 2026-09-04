@@ -57,6 +57,11 @@ neural fallback fires.
 - `RuleEngine` — greedy longest-match; consonant → inherent-vowel form + "pending"
   flag; vowel → matra; consonant-after-consonant → auto virama (conjuncts fall
   out for free). Non-schema chars pass through and reset state.
+  `transliterate_variants()` returns the literal form plus, when applicable,
+  orthographic variants — a de-geminated copy (`X ्X` → `X`, so `hello` → हेलो)
+  and a nasal-conjunct copy (`ं` + stop → homorganic nasal + virama, so
+  `रवींद्र` → रवीन्द्र, the Nepali spelling vs the Hindi anusvara). Variants are
+  offered alongside the literal; the dictionary layer picks the winner.
 - `Ranker` trait — the plug-in seam. `rank(input, cands) -> cands`. Dictionary,
   LM, learning, and model layers are each a `Ranker`, run in order.
 - `Candidate { text, source, score }`, `Source { Rule, Dictionary, Learned,
@@ -68,13 +73,21 @@ neural fallback fires.
   `DictRanker::builtin()` builds it in memory from the compiled-in seed
   (`seed/ne.tsv`); `DictRanker::open(path)` memory-maps a large prebuilt `.fst`
   (`src/bin/build.rs` compiles a TSV → `.fst`).
-- Per input, three passes against the rule output:
+- Per input, three passes run against **every** literal candidate the rule engine
+  produced — the primary transliteration and any variant (e.g. the de-geminated
+  loanword form), so a variant can only win with dictionary backing:
   1. **exact** — `map.get(word)` → score 300 + log-freq bonus, `Source::Dictionary`.
   2. **fuzzy** — `Levenshtein(word, 1)` → 200 + freq bonus (+15 when the hit is
      the same character length, i.e. a substitution: vowel length `ि`/`ी`,
      anusvara, sibilant). This is what turns `नेपालि` → `नेपाली`.
   3. **prefix** — `Str(word).starts_with()` → up to 3 completions at ~90 + bonus/2.
 - All results funnel through `xlit_core::merge_candidate` (dedupe, keep max score).
+- The seed (`seed/ne.tsv`) has three groups: core vocabulary, common English
+  loanwords (हेलो, बस, स्कुल, डाक्टर, …), and proper nouns — places, countries,
+  people (पोखरा, वीरगञ्ज, रवीन्द्रनाथ, …). Combined with the engine's
+  de-geminated and nasal-conjunct variants, this is what keeps `hello` off
+  हेल्लो and names/loanwords in Nepali (अङ्ग्रेजी, not अंग्रेजी) rather than
+  Hindi orthography.
 - Data sources to grow the seed: Leipzig Corpora (`nep_news` / `nep_wikipedia`)
   for frequencies, Nepali National Corpus, Hunspell `ne_NP` word list.
 
@@ -122,7 +135,7 @@ the engine to `commit` for learning.
 5. **M5 — Fcitx5**.
 6. **M6 — Windows TSF** (`frontends/windows-tsf`, `xlit-tsf.dll`), staged:
    - **M6.1** *(done)*: registrable COM DLL — `regsvr32` writes the CLSID keys,
-     TSF profile (`xlit Nepali (phonetic)`, LANGID `0x0461`), and keyboard-TIP
+     TSF profile (`Input by Prabidhi.bid`, LANGID `0x0461`), and keyboard-TIP
      category. Activatable; no key handling yet.
    - **M6.2**: `ITfKeyEventSink` + inline TSF composition — buffer ASCII, replace
      with the engine's top candidate on a break key.

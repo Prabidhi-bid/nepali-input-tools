@@ -5,7 +5,7 @@ Framework, so you can type Nepali phonetically in any application.
 
 ## Status: M6.1 — registrable no-op
 
-The DLL registers as an input method ("xlit Nepali (phonetic)") and can be
+The DLL registers as an input method ("Input by Prabidhi.bid") and can be
 activated without crashing. It does **not** intercept keys yet — that's M6.2.
 Use this stage only to confirm install / activate / uninstall work on your
 machine.
@@ -30,7 +30,7 @@ written. Then add the input method:
 1. Settings → Time & Language → Language & region → **Add a language** → Nepali
    (नेपाली). (You only need the language entry; no display pack required.)
 2. Under Nepali → Language options → Keyboards, you should see
-   **xlit Nepali (phonetic)**.
+   **Input by Prabidhi.bid**.
 3. Switch to it with the taskbar language button (or Win+Space).
 
 At M6.1 typing still produces normal Latin — activation is only logged.
@@ -52,6 +52,40 @@ regsvr32 /u "C:\Users\DELL\Desktop\input tool\target\release\xlit_tsf.dll"
 ```
 
 Remove the Nepali keyboard from Settings afterwards if you don't want it.
+
+## Dev rebuild loop
+
+Once the service is registered, Windows keeps `xlit_tsf.dll` loaded, so a plain
+`cargo build` fails with *"unable to delete existing file"*. Use the helper — it
+asks for elevation, unregisters, recycles the input-host processes, rebuilds, and
+re-registers:
+
+```
+powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\rebuild-tsf.ps1
+```
+
+Add `-SkipRegister` to build without reinstalling. Approve the UAC prompt as the
+same user you log in with (see note in the script header).
+
+If a process you can't close (the Claude desktop app, an open console) still maps
+the DLL, the script **renames the old file aside** (`xlit_tsf.dll.<timestamp>.old`)
+and builds a fresh one — the stale copy unloads on your next sign-out. It sweeps
+those `.old` files on the next run.
+
+## Troubleshooting: not in the taskbar switcher
+
+- The profile only shows once **Nepali is in your language list** (step 1) — the
+  TIP is bound to LANGID `0x0461`, so with no ne-NP entry there is nothing to
+  attach to.
+- `DllRegisterServer` now calls `EnableLanguageProfile` and registers the
+  `TIPCAP_IMMERSIVESUPPORT` / `SYSTRAYSUPPORT` categories; an install from before
+  that change is stale. Re-run `regsvr32 /u ...` then `regsvr32 ...`, or just
+  `regsvr32 ...` again to rewrite the keys, then sign out / in.
+- `EnableLanguageProfile` writes per-user (HKCU) state. Run `regsvr32` elevated
+  **as the same user** you log in as; a separate "Administrator" account enables
+  it only for that account.
+- The taskbar input indicator appears only with 2+ input methods; the built-in
+  English keyboard plus this one is enough.
 
 ## Notes
 
