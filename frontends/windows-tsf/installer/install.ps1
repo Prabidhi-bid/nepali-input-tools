@@ -74,9 +74,13 @@ if (-not (Test-Admin)) {
 # --- elevated from here -----------------------------------------------------------
 $here     = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $here '..\..\..')).Path
-# This shell is native-bitness, so System32 is the native regsvr32 and SysWOW64
-# is the 32-bit one (no filesystem redirection to worry about).
-$RegsvrNative = Join-Path $env:windir 'System32\regsvr32.exe'
+# native (64-bit) System32 even if this happens to be a 32-bit PowerShell;
+# SysWOW64 is always the 32-bit one.
+$sysNative = Join-Path $env:windir 'System32'
+if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess) {
+    $sysNative = Join-Path $env:windir 'Sysnative'
+}
+$RegsvrNative = Join-Path $sysNative 'regsvr32.exe'
 $Regsvr32bit  = Join-Path $env:windir 'SysWOW64\regsvr32.exe'
 
 function Clear-Dll([string]$path) {

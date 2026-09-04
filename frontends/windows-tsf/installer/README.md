@@ -54,10 +54,24 @@ Apps & features → *Input by Prabidhi.bid* → Uninstall, or:
 powershell -ExecutionPolicy Bypass -File "%ProgramFiles%\Prabidhi.bid Input\uninstall.ps1"
 ```
 
-Removes this TIP from your language list, `regsvr32 /s /u` for each bitness (→
-`DllUnregisterServer` removes the COM + CTF\TIP keys), deletes the install
-folder, removes the Apps & features entry. Files still in use are renamed aside
-and swept after the script exits / on next sign-out.
+Completely reverses the install, in order:
+
+1. `Set-WinUserLanguageList` — remove this TIP from your language list (and
+   `ne-NP` itself if nothing else is left under it).
+2. `regsvr32 /s /u` for each installed bitness → `DllUnregisterServer` clears
+   the COM CLSID keys + the CTF\TIP profile and categories.
+3. Registry fallback — force-delete `Classes\CLSID\{CLSID}`,
+   `Wow6432Node\CLSID\{CLSID}`, `CTF\TIP\{CLSID}` in case a DLL couldn't be
+   loaded to self-unregister.
+4. HKCU CTF sweep — drop cached `Assemblies` / `SortOrder` entries still naming
+   the CLSID.
+5. Remove the Apps & features entry.
+6. Delete `%ProgramFiles%\Prabidhi.bid Input\` (locked files renamed aside +
+   swept by a detached `rmdir` / on next sign-out).
+
+Not touched (development-environment, not installation state): the
+`rustup target add i686-pc-windows-msvc` toolchain component and
+`target\**\xlit_tsf.dll*` build outputs.
 
 ## Hardening against reverse engineering
 
