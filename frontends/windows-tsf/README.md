@@ -18,14 +18,20 @@ cargo build -p xlit-tsf --release
 
 Output: `target\release\xlit_tsf.dll` (x64).
 
-## Install  (Run PowerShell / cmd **as Administrator**)
+## Install
+
+**MSI (recommended):** build `installer\Input-by-Prabidhi.bid-<ver>-x64.msi`
+with [`installer\build-msi.ps1`](installer/build-msi.ps1) and double-click it.
+See [`installer/README.md`](installer/README.md).
+
+**Manual (dev):** run PowerShell / cmd **as Administrator**:
 
 ```
 regsvr32 "C:\Users\DELL\Desktop\input tool\target\release\xlit_tsf.dll"
 ```
 
-A success dialog means the COM keys + TSF profile + keyboard category were
-written. Then add the input method:
+A success dialog means the COM keys + TSF profile + keyboard categories were
+written. Either way, then add the input method:
 
 1. Settings → Time & Language → Language & region → **Add a language** → Nepali
    (नेपाली). (You only need the language entry; no display pack required.)

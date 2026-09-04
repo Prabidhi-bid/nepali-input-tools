@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MSI authoring for "Input by Prabidhi.bid" (Windows TSF text service).
+
+  WiX v4/v5.  Build with installer/build-msi.ps1, which passes:
+      -d DllPath=<repo>\target\release\xlit_tsf.dll
+      -d ProductVersion=<x.y.z>
+      -arch x64  -ext WixToolset.UI.wixext
+
+  Registration is delegated to the DLL's own DllRegisterServer via regsvr32
+  (it writes the COM CLSID keys and the HKLM\SOFTWARE\Microsoft\CTF\TIP
+  profile + TIPCAP categories).  Run the MSI elevated — double-click (UAC) or
+  msiexec from an elevated prompt.  See installer/README.md "Limitations".
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="Input by Prabidhi.bid"
+           Manufacturer="Prabidhi.bid"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="7b2a5e10-4c3d-4f8a-9e21-6d5c4b3a2f19"
+           Scope="perMachine"
+           Compressed="yes"
+           InstallerVersion="500">
+
+    <SummaryInformation Description="Nepali phonetic input method (Windows TSF)" />
+
+    <MajorUpgrade Schedule="afterInstallInitialize"
+                  DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Launch Condition="VersionNT64" Message="[ProductName] requires 64-bit Windows." />
+
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <StandardDirectory Id="System64Folder" />
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Prabidhi.bid Input">
+        <Component Id="MainDll" Bitness="always64">
+          <File Id="xlit_tsf.dll" Source="$(var.DllPath)" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="Input by Prabidhi.bid" Level="1">
+      <ComponentRef Id="MainDll" />
+    </Feature>
+
+    <!-- ===== TSF / COM (un)registration ===== -->
+    <CustomAction Id="RegisterTsf"
+        Directory="INSTALLFOLDER"
+        ExeCommand="&quot;[System64Folder]regsvr32.exe&quot; /s &quot;[#xlit_tsf.dll]&quot;"
+        Execute="immediate" Return="check" Impersonate="yes" />
+    <CustomAction Id="UnregisterTsf"
+        Directory="INSTALLFOLDER"
+        ExeCommand="&quot;[System64Folder]regsvr32.exe&quot; /s /u &quot;[#xlit_tsf.dll]&quot;"
+        Execute="immediate" Return="ignore" Impersonate="yes" />
+
+    <InstallExecuteSequence>
+      <Custom Action="RegisterTsf" After="InstallFiles"
+              Condition="NOT REMOVE" />
+      <Custom Action="UnregisterTsf" Before="RemoveFiles"
+              Condition="(REMOVE~=&quot;ALL&quot;) AND (NOT UPGRADINGPRODUCTCODE)" />
+    </InstallExecuteSequence>
+
+    <!-- minimal wizard: license + progress -->
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+
+  </Package>
+</Wix>

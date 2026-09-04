@@ -12,6 +12,11 @@
 xlit-learn.json
 *.json.tmp
 
+# installer build output
+*.msi
+*.wixpdb
+frontends/windows-tsf/*.old
+
 # python (training/)
 __pycache__/
 .venv/
