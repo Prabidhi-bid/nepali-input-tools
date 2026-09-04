@@ -36,6 +36,23 @@ $here     = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $here '..\..\..')).Path
 $dll      = Join-Path $repoRoot "target\$Configuration\xlit_tsf.dll"
 
+# If the service is registered, Windows maps xlit_tsf.dll into ctfmon / the
+# Claude app / consoles and cargo can't overwrite it ("Access is denied").
+# Renaming a mapped DLL aside is allowed; cargo then writes a fresh one. The
+# stale copy unloads on the next sign-out. (No elevation needed — target\ is
+# user-writable. build-setup.ps1 only builds; the Setup.exe registers later.)
+Get-ChildItem (Split-Path $dll) -Filter 'xlit_tsf.dll.*.old' -ErrorAction SilentlyContinue |
+    ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
+if (Test-Path $dll) {
+    try {
+        Remove-Item $dll -Force -ErrorAction Stop
+    } catch {
+        $aside = "$dll.$(Get-Date -Format yyyyMMddHHmmss).old"
+        Rename-Item $dll $aside -Force
+        Write-Host "    ($(Split-Path $dll -Leaf) in use — renamed to $(Split-Path $aside -Leaf))" -ForegroundColor DarkGray
+    }
+}
+
 Write-Host "==> cargo build -p xlit-tsf ($Configuration, no trace)" -ForegroundColor Cyan
 Push-Location $repoRoot
 try {
