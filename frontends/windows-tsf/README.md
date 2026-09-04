@@ -3,7 +3,7 @@
 A COM in-process DLL that plugs the `xlit` engine into Windows' Text Services
 Framework, so you can type Nepali phonetically in any application.
 
-## Status: M6.2 — it types
+## Status: M6.3 — it types, with a candidate list
 
 The DLL registers as an input method ("Input by Prabidhi.bid"), and once you
 switch to it, letters are converted inline:
@@ -29,8 +29,11 @@ learning), so `nepaali` corrects to नेपाली and `hello` gives हे�
 numbered candidate is remembered in `%APPDATA%\xlit\xlit-learn.json` and floats
 that choice to the top next time.
 
-There is no candidate *window* yet — `1`–`9` and the arrows work, you just can't
-see the list. That's M6.3.
+A popup lists the candidates under the word as you type, with the current one
+highlighted. It appears only when there is a real choice to make (two or more
+candidates) and only once the control has told us where the caret is — a list
+stranded in the corner of the screen would be worse than none, so in a control
+that cannot answer, typing still works and the list simply stays hidden.
 
 ## Build
 
@@ -162,7 +165,7 @@ swept on the next run.
 - GUIDs (keep stable): CLSID `{438E43E4-3800-4AB1-82A6-A2E831ABF107}`,
   profile `{4BE59555-69DD-48CA-8BC8-AB450205A567}`, LANGID `0x0461`.
 
-## Next (M6.3)
+## Next (M6.4)
 
-A candidate window: a layered popup under the composition listing the numbered
-candidates, so the `1`–`9` and arrow keys that already work become visible.
+A language-bar icon showing (and toggling) Nepali vs passthrough, and whatever
+Chrome / Electron / UWP quirks testing turns up.

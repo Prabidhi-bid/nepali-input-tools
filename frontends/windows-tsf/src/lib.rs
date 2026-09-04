@@ -61,7 +61,7 @@ pub(crate) fn module_release() {
     MODULE_REFS.fetch_sub(1, Ordering::SeqCst);
 }
 
-fn dll_hmodule() -> HMODULE {
+pub(crate) fn dll_hmodule() -> HMODULE {
     HMODULE(DLL_HMODULE.load(Ordering::SeqCst))
 }
 

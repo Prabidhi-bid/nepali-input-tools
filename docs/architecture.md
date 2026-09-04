@@ -154,7 +154,15 @@ the engine to `commit` for learning.
      text-input process: a refused composition reports the letter as unhandled
      (plain Latin, not a dead keyboard), and `OnCompositionTerminated` takes the
      session lock with `try_borrow_mut` so a re-entrant teardown cannot panic.
-   - **M6.3**: candidate window (layered popup) so the numbered list is visible.
+   - **M6.3** *(done)*: candidate window — an owner-drawn `WS_EX_NOACTIVATE`
+     popup, not `ITfCandidateListUIElement` (the UI-less protocol leaves drawing
+     to the application, and almost none do it). Rendered in *Nirmala UI*, the
+     Windows Devanagari face; anchored with `ITfContextView::GetTextExt` and
+     flipped above the line near a screen edge. Its paint state is owned by the
+     window via `GWLP_USERDATA` rather than read back out of the session, so the
+     window procedure can never re-enter a `RefCell` an edit already holds.
+     Shown only when there are 2+ candidates *and* the control reported a caret
+     position.
    - **M6.4**: language-bar icon, Chrome/Electron/UWP fixes. The Ctrl+Space
      passthrough toggle landed early, with M6.2.
    - **M6.5** *(initial)*: `installer/` — `xlit-tsf.iss` + `build-setup.ps1`
