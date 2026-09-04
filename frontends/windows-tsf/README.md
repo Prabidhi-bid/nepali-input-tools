@@ -20,19 +20,18 @@ Output: `target\release\xlit_tsf.dll` (x64).
 
 ## Install
 
-See [`installer/`](installer) for both routes:
-
-- **`build-setup.ps1`** — a distributable `Setup.exe` (Inno Setup).
-- **`install.ps1`** — self-elevating, no toolchain.
+[`installer/install.ps1`](installer/install.ps1) — self-elevating, no toolchain.
 
 ```
 powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\install.ps1
 ```
 
-Either one: deregisters any prior copy, registers the DLL, **adds the Nepali
-keyboard to your language list**, and recycles the input hosts — so
+Builds x64 + x86, deregisters any prior copy, registers both DLLs, **adds the
+Nepali keyboard to your language list**, and recycles the input hosts — so
 **Input by Prabidhi.bid** should already be in the taskbar / Win+Space switcher
-(sign out / in if not). `rebuild-tsf.ps1` does the same for the dev loop.
+(sign out / in if not). `-SkipX86` for a faster x64-only run;
+[`uninstall.ps1`](installer/uninstall.ps1) reverses it. See
+[`installer/README.md`](installer/README.md).
 
 **Manual (dev, register only):** PowerShell / cmd **as Administrator**:
 
@@ -74,27 +73,24 @@ Remove the Nepali keyboard from Settings afterwards if you don't want it.
 ## Dev rebuild loop
 
 Once the service is registered, Windows keeps `xlit_tsf.dll` loaded, so a plain
-`cargo build` fails with *"unable to delete existing file"*. Use the helper — it
-asks for elevation, unregisters, recycles the input-host processes, rebuilds, and
-re-registers:
+`cargo build` fails with *"unable to delete existing file"*. `install.ps1`
+handles that (it deregisters, recycles the input hosts, and renames a still-
+mapped DLL aside before rebuilding), so re-run it after each change —
+`-SkipX86` keeps it to a single x64 build:
 
 ```
-powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\rebuild-tsf.ps1
+powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\install.ps1 -SkipX86
 ```
 
-Add `-SkipRegister` to build without reinstalling. Approve the UAC prompt as the
-same user you log in with (see note in the script header).
-
-If a process you can't close (the Claude desktop app, an open console) still maps
-the DLL, the script **renames the old file aside** (`xlit_tsf.dll.<timestamp>.old`)
-and builds a fresh one — the stale copy unloads on your next sign-out. It sweeps
-those `.old` files on the next run.
+The stale mapped copy in apps you can't close (the Claude app, a console)
+unloads on your next sign-out; leftover `xlit_tsf.dll.<timestamp>.old` files are
+swept on the next run.
 
 ## Troubleshooting: not in the taskbar switcher
 
-- The switcher reads **your language list**, not the registry. `install.ps1` /
-  the Setup.exe add `ne-NP` + this TIP with `Set-WinUserLanguageList`; if you
-  registered by hand with `regsvr32`, add the keyboard yourself in Settings.
+- The switcher reads **your language list**, not the registry. `install.ps1`
+  adds `ne-NP` + this TIP with `Set-WinUserLanguageList`; if you registered by
+  hand with `regsvr32`, add the keyboard yourself in Settings.
 - `DllRegisterServer` uses `ITfInputProcessorProfileMgr::RegisterProfile`
   (enabled-by-default, machine-wide/HKLM) plus the `IMMERSIVESUPPORT` /
   `SYSTRAYSUPPORT` categories and does **not** claim `COMLESS`. An install from

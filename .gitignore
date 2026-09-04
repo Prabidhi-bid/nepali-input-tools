@@ -12,13 +12,8 @@
 xlit-learn.json
 *.json.tmp
 
-# renamed-aside locked DLLs (dev rebuild / installer)
+# renamed-aside locked DLLs (installer)
 *.dll.*.old
-
-# built installers
-frontends/windows-tsf/installer/*.exe
-*.msi
-*.wixpdb
 
 # python (training/)
 __pycache__/
