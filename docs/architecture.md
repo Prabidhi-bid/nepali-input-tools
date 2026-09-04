@@ -137,15 +137,16 @@ the engine to `commit` for learning.
    - **M6.1** *(done)*: registrable COM DLL — `regsvr32` writes the CLSID keys,
      TSF profile (`Input by Prabidhi.bid`, LANGID `0x0461`), `EnableLanguageProfile`,
      and the keyboard + `TIPCAP_*` categories (so it shows in the Win10/11
-     switcher). Activatable; no key handling yet. MSI: `frontends/windows-tsf/installer`.
+     switcher). Activatable; no key handling yet. Install/uninstall:
+     `frontends/windows-tsf/installer/*.ps1`.
    - **M6.2**: `ITfKeyEventSink` + inline TSF composition — buffer ASCII, replace
      with the engine's top candidate on a break key.
    - **M6.3**: candidate window (layered popup) + number-key select + `xlit-learn`.
    - **M6.4**: language-bar icon, x86 build, Chrome/Electron/UWP fixes, toggle key.
-   - **M6.5** *(initial)*: WiX MSI (`installer/`) — installs the DLL to Program
-     Files and registers it via `regsvr32`. TODO: deferred no-impersonate CAs,
-     per-user `EnableLanguageProfile` via Active Setup, x86/ARM64 payloads,
-     code signing.
+   - **M6.5** *(initial)*: `installer/install.ps1` + `uninstall.ps1` — copy the
+     DLL to Program Files, `regsvr32`, Apps & features entry; no toolchain.
+     TODO: a signed MSI (deferred no-impersonate CAs, per-user
+     `EnableLanguageProfile` via Active Setup), x86/ARM64 payloads.
 7. **M7 — ONNX OOV fallback**: `training/` pipeline (Dakshina `ne` +
    Aksharantar `nep` → small char transformer → int8 ONNX), lazy-loaded `Ranker`.
 8. **M8 — packaging**: signed installers, per-distro packages, language packs.

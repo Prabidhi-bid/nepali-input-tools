@@ -20,9 +20,13 @@ Output: `target\release\xlit_tsf.dll` (x64).
 
 ## Install
 
-**MSI (recommended):** build `installer\Input-by-Prabidhi.bid-<ver>-x64.msi`
-with [`installer\build-msi.ps1`](installer/build-msi.ps1) and double-click it.
-See [`installer/README.md`](installer/README.md).
+**Recommended:** [`installer\install.ps1`](installer/install.ps1) — self-elevating,
+no toolchain. Builds the DLL, copies it to Program Files, registers it, and adds
+an Apps & features entry. See [`installer/README.md`](installer/README.md).
+
+```
+powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\install.ps1
+```
 
 **Manual (dev):** run PowerShell / cmd **as Administrator**:
 

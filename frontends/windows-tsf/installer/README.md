@@ -1,63 +1,52 @@
-# Installer — `Input by Prabidhi.bid` (MSI)
+# Installer — `Input by Prabidhi.bid`
 
-WiX v4/v5 authoring for a per-machine MSI that installs `xlit_tsf.dll` and
-registers it as a Windows text service.
+Plain-PowerShell install / uninstall for the Windows TSF text service. No
+installer toolchain (no WiX, no .NET). Both scripts self-elevate.
 
-## Prerequisites (one time)
-
-```
-winget install Microsoft.DotNet.SDK.8
-dotnet tool install --global wix
-```
-
-Any .NET SDK ≥ 6 works. The build script adds `WixToolset.UI.wixext` itself.
-
-## Build
+## Install
 
 ```
-powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\build-msi.ps1
+powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\install.ps1
 ```
 
-Options: `-Version 0.2.0`, `-Configuration debug`. Output:
-`installer\Input-by-Prabidhi.bid-<version>-x64.msi` (the DLL is embedded in the
-MSI's cab).
+What it does (elevated):
 
-## Install / uninstall
+1. `cargo build -p xlit-tsf --release` (skip with `-NoBuild`; `-Configuration debug` for a debug build).
+2. Copy `xlit_tsf.dll` + `uninstall.ps1` to `%ProgramFiles%\Prabidhi.bid Input\`.
+3. `regsvr32 /s` the installed DLL — runs its `DllRegisterServer`, which writes
+   the COM CLSID keys and the `HKLM\SOFTWARE\Microsoft\CTF\TIP` profile,
+   `EnableLanguageProfile`, and the `TIPCAP_*` categories.
+4. Add an **Apps & features** entry (`…\Uninstall\PrabidhibidInput`) whose
+   uninstall command runs the copied `uninstall.ps1`.
+5. Restart `ctfmon` / `TextInputHost` so the new profile is picked up.
 
-| | command |
-|---|---|
-| install (wizard) | double-click the `.msi`, accept the UAC prompt |
-| install (silent) | `msiexec /i "Input-by-Prabidhi.bid-0.1.0-x64.msi" /qn` |
-| uninstall | `msiexec /x "Input-by-Prabidhi.bid-0.1.0-x64.msi" /qn` — or Apps & features |
-| log | add `/l*v install.log` |
+If a running process (the Claude app, an open console) still maps an older
+`xlit_tsf.dll`, the locked file is renamed to `xlit_tsf.dll.<timestamp>.old`
+and a fresh one is written; the stale copy unloads on the next sign-out.
 
-The MSI puts the DLL in `%ProgramFiles%\Prabidhi.bid Input\` and runs
-`regsvr32` on it (which triggers the DLL's `DllRegisterServer`). After
-install: add Nepali under **Settings → Time & Language → Language & region**,
-then pick **Input by Prabidhi.bid** from the taskbar language button / `Win+Space`.
+After installing: **Settings → Time & language → Language & region → Add a
+language → Nepali**, then pick *Input by Prabidhi.bid* from the taskbar
+language button (`Win+Space`). Sign out / in if it is not listed yet.
 
-## What it does
+## Uninstall
 
-- One component: `xlit_tsf.dll` (x64), key-path.
-- `RegisterTsf` custom action (`regsvr32 /s`) after `InstallFiles`.
-- `UnregisterTsf` (`regsvr32 /s /u`) before `RemoveFiles` on uninstall,
-  skipped during a major upgrade (`UPGRADINGPRODUCTCODE`).
-- `MajorUpgrade` scheduled `afterInstallInitialize`, so upgrading removes the
-  old files first, then the new install re-registers.
-- `WixUI_Minimal` (license + progress). License text: `License.rtf`.
+Apps & features → *Input by Prabidhi.bid* → Uninstall, or:
+
+```
+powershell -ExecutionPolicy Bypass -File "%ProgramFiles%\Prabidhi.bid Input\uninstall.ps1"
+```
+
+`regsvr32 /s /u` (→ `DllUnregisterServer` removes the COM + CTF\TIP keys),
+deletes the install folder, removes the Apps & features entry. Files still in
+use are renamed aside and swept after the script exits / on next sign-out.
 
 ## Limitations / TODO
 
-- **Run elevated.** The register/unregister actions are immediate CAs, so they
-  need an elevated context — double-clicking the MSI (UAC) or `msiexec` from an
-  elevated prompt. A plain `msiexec /i` from a non-elevated shell won't have
-  rights for the `HKLM` writes. Moving these to deferred `no-impersonate` CAs
-  (via `WixToolset.Util.wixext`'s `QuietExec`) is the proper fix.
-- **Per-user enable.** `DllRegisterServer` calls `EnableLanguageProfile`, which
-  writes `HKCU`. Under the MSI that lands in the installing user's hive only;
-  other users may need to enable the keyboard once from language settings. An
-  `ActiveSetup` stub that runs a per-user enable on first logon is the fix.
-- **x64 only.** No x86/ARM64 payload yet, so 32-bit apps won't load the TIP.
-- **DLL locked while registered.** If a rebuild/reinstall fails to replace the
-  file, sign out and back in (or use `..\rebuild-tsf.ps1` for dev iteration).
-- No code signing — SmartScreen will warn on the `.msi`.
+- **Per-user enable.** `DllRegisterServer` calls `EnableLanguageProfile`, an
+  `HKCU` write — it covers the user who runs the installer. Other users may
+  need to enable the keyboard once from language settings. An `ActiveSetup`
+  stub (per-user command on first logon) is the fix.
+- **x64 only.** No x86 / ARM64 payload yet, so 32-bit apps won't load the TIP.
+- **Not signed.** SmartScreen / PowerShell may warn.
+- This is a script, not a redistributable `.exe`/`.msi`. A signed MSI (deferred
+  no-impersonate custom actions + Active Setup) is the eventual M6.5 target.
