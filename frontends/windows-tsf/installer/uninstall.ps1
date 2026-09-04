@@ -44,6 +44,18 @@ if (-not (Test-Admin)) {
 }
 
 try {
+    # remove this TIP from the user's language list (drop ne-NP if it's then empty)
+    try {
+        $tip = '0461:{438E43E4-3800-4AB1-82A6-A2E831ABF107}{4BE59555-69DD-48CA-8BC8-AB450205A567}'
+        $list = Get-WinUserLanguageList
+        $ne = $list | Where-Object { $_.LanguageTag -eq 'ne-NP' }
+        if ($ne) {
+            [void]$ne.InputMethodTips.Remove($tip)
+            if ($ne.InputMethodTips.Count -eq 0) { [void]$list.Remove($ne) }
+            Set-WinUserLanguageList $list -Force
+        }
+    } catch {}
+
     $dll = Join-Path $InstallDir 'xlit_tsf.dll'
     if (Test-Path $dll) {
         Write-Host "==> regsvr32 /s /u xlit_tsf.dll" -ForegroundColor Cyan

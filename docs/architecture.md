@@ -136,19 +136,21 @@ the engine to `commit` for learning.
 6. **M6 — Windows TSF** (`frontends/windows-tsf`, `xlit-tsf.dll`), staged:
    - **M6.1** *(done)*: registrable COM DLL — `regsvr32` writes the CLSID keys,
      TSF profile (`Input by Prabidhi.bid`, LANGID `0x0461`), `EnableLanguageProfile`,
-     and the keyboard + `TIPCAP_*` categories (so it shows in the Win10/11
-     switcher). Activatable; no key handling yet. Install/uninstall:
-     `frontends/windows-tsf/installer/*.ps1`.
+     and the keyboard + `TIPCAP_*` categories (`IMMERSIVESUPPORT` /
+     `SYSTRAYSUPPORT` for the modern switcher; **not** `COMLESS` — this is a
+     classic COM server and declaring it hid the TIP from `TextInputHost`).
+     Activatable; no key handling yet. Install: `frontends/windows-tsf/installer/`.
    - **M6.2**: `ITfKeyEventSink` + inline TSF composition — buffer ASCII, replace
      with the engine's top candidate on a break key.
    - **M6.3**: candidate window (layered popup) + number-key select + `xlit-learn`.
    - **M6.4**: language-bar icon, x86 build, Chrome/Electron/UWP fixes, toggle key.
    - **M6.5** *(initial)*: `installer/` — `build-setup.ps1` produces an Inno
      Setup `Setup.exe`; `install.ps1` / `uninstall.ps1` are the toolchain-free
-     path. Both register via `regsvr32`. Release DLL is stripped with trace
-     behind a cargo feature. TODO: code signing, a signed MSI (deferred
-     no-impersonate CAs, per-user `EnableLanguageProfile` via Active Setup),
-     x86/ARM64 payloads.
+     path. Both deregister→register via `regsvr32` and add the keyboard to the
+     user's list with `Set-WinUserLanguageList` so it lands in the switcher.
+     Release DLL is stripped with trace behind a cargo feature. TODO: code
+     signing, a signed MSI (deferred no-impersonate CAs, Active Setup for
+     other users), x86/ARM64 payloads.
 7. **M7 — ONNX OOV fallback**: `training/` pipeline (Dakshina `ne` +
    Aksharantar `nep` → small char transformer → int8 ONNX), lazy-loaded `Ranker`.
 8. **M8 — packaging**: signed installers, per-distro packages, language packs.

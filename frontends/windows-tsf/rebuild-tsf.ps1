@@ -124,8 +124,21 @@ try {
 
     if (-not $SkipRegister) {
         Invoke-Step 'Register the fresh DLL' {
+            & regsvr32.exe /s /u $dll 2>$null   # clean any prior registration first
             & regsvr32.exe /s $dll
             if ($LASTEXITCODE -ne 0) { throw "regsvr32 failed ($LASTEXITCODE)" }
+        }
+        Invoke-Step 'Add the Nepali keyboard to your language list' {
+            try {
+                $tip = '0461:{438E43E4-3800-4AB1-82A6-A2E831ABF107}{4BE59555-69DD-48CA-8BC8-AB450205A567}'
+                $list = Get-WinUserLanguageList
+                if (-not ($list | Where-Object { $_.LanguageTag -eq 'ne-NP' })) { $list.Add('ne-NP') }
+                $ne = $list | Where-Object { $_.LanguageTag -eq 'ne-NP' }
+                if ($ne -and ($ne.InputMethodTips -notcontains $tip)) { $ne.InputMethodTips.Add($tip) }
+                Set-WinUserLanguageList $list -Force
+            } catch {
+                Write-Warning "couldn't auto-add ($_) - add it from Settings > Language > Nepali"
+            }
         }
         Invoke-Step 'Recycle hosts again so they load the new registration' {
             foreach ($p in $hosts) {
@@ -133,10 +146,9 @@ try {
             }
         }
         Write-Host ''
-        Write-Host 'Done. "Input by Prabidhi.bid" is registered and enabled.' -ForegroundColor Green
-        Write-Host 'Apps already running (this console, the Claude app) keep the old'
-        Write-Host 'copy mapped until you sign out/in. If the name/keyboard is not in'
-        Write-Host 'the taskbar switcher yet: add Nepali in Settings, then sign out/in.'
+        Write-Host 'Done. "Input by Prabidhi.bid" is registered and added to your keyboard list.' -ForegroundColor Green
+        Write-Host 'Apps already running (this console, the Claude app) keep the old copy'
+        Write-Host 'mapped until you sign out/in. If it is not in the switcher yet, sign out/in.'
     } else {
         Write-Host ''
         Write-Host 'Build done; service left unregistered (-SkipRegister).' -ForegroundColor Green

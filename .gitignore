@@ -15,6 +15,11 @@ xlit-learn.json
 # renamed-aside locked DLLs (dev rebuild / installer)
 *.dll.*.old
 
+# built installers
+frontends/windows-tsf/installer/*.exe
+*.msi
+*.wixpdb
+
 # python (training/)
 __pycache__/
 .venv/

@@ -23,27 +23,26 @@ Output: `target\release\xlit_tsf.dll` (x64).
 See [`installer/`](installer) for both routes:
 
 - **`build-setup.ps1`** — a distributable `Setup.exe` (Inno Setup).
-- **`install.ps1`** — self-elevating, no toolchain: builds the DLL, copies it to
-  Program Files, registers it, adds an Apps & features entry.
+- **`install.ps1`** — self-elevating, no toolchain.
 
 ```
 powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\install.ps1
 ```
 
-**Manual (dev):** run PowerShell / cmd **as Administrator**:
+Either one: deregisters any prior copy, registers the DLL, **adds the Nepali
+keyboard to your language list**, and recycles the input hosts — so
+**Input by Prabidhi.bid** should already be in the taskbar / Win+Space switcher
+(sign out / in if not). `rebuild-tsf.ps1` does the same for the dev loop.
+
+**Manual (dev, register only):** PowerShell / cmd **as Administrator**:
 
 ```
 regsvr32 "C:\Users\DELL\Desktop\input tool\target\release\xlit_tsf.dll"
 ```
 
-A success dialog means the COM keys + TSF profile + keyboard categories were
-written. Either way, then add the input method:
-
-1. Settings → Time & Language → Language & region → **Add a language** → Nepali
-   (नेपाली). (You only need the language entry; no display pack required.)
-2. Under Nepali → Language options → Keyboards, you should see
-   **Input by Prabidhi.bid**.
-3. Switch to it with the taskbar language button (or Win+Space).
+then add the keyboard yourself: Settings → Time & Language → Language & region →
+**Add a language** → Nepali (नेपाली) → Language options → Keyboards → add
+**Input by Prabidhi.bid**.
 
 At M6.1 typing still produces normal Latin — activation is only logged.
 

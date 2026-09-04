@@ -122,14 +122,27 @@ try {
     Set-ItemProperty $UninstallRK NoModify 1 -Type DWord
     Set-ItemProperty $UninstallRK NoRepair 1 -Type DWord
 
-    # 5. recycle input-host processes so the new profile is picked up
+    # 5. add ne-NP + this TIP to the user's language list, so it shows in the
+    #    taskbar / Win+Space switcher without a manual Settings visit
+    Write-Host "==> adding the Nepali keyboard to your language list" -ForegroundColor Cyan
+    try {
+        $tip = '0461:{438E43E4-3800-4AB1-82A6-A2E831ABF107}{4BE59555-69DD-48CA-8BC8-AB450205A567}'
+        $list = Get-WinUserLanguageList
+        if (-not ($list | Where-Object { $_.LanguageTag -eq 'ne-NP' })) { $list.Add('ne-NP') }
+        $ne = $list | Where-Object { $_.LanguageTag -eq 'ne-NP' }
+        if ($ne -and ($ne.InputMethodTips -notcontains $tip)) { $ne.InputMethodTips.Add($tip) }
+        Set-WinUserLanguageList $list -Force
+    } catch {
+        Write-Warning "couldn't auto-add the keyboard ($_). Add it from Settings > Language > Nepali > Keyboards."
+    }
+
+    # 6. recycle input-host processes so the switcher refreshes
     foreach ($p in $HostProcs) { Stop-Process -Name $p -Force -ErrorAction SilentlyContinue }
 
     Write-Host ''
-    Write-Host "Installed. `"$AppName`" is registered and enabled." -ForegroundColor Green
-    Write-Host 'Next: Settings > Time & language > Language & region > Add a language > Nepali,'
-    Write-Host 'then pick it from the taskbar language button (Win+Space).'
-    Write-Host 'Sign out / in if it is not listed yet - apps already running keep the'
+    Write-Host "Installed. `"$AppName`" is registered and added to your Nepali keyboard list." -ForegroundColor Green
+    Write-Host 'Switch to it with the taskbar language button or Win+Space.'
+    Write-Host 'Sign out / in if it is not shown yet - apps already running keep the'
     Write-Host 'old registration mapped until then.'
     $code = 0
 }

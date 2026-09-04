@@ -96,6 +96,12 @@ pub(crate) fn register() -> Result<()> {
 
         let categories: ITfCategoryMgr =
             CoCreateInstance(&CLSID_TF_CategoryMgr, None, CLSCTX_INPROC_SERVER)?;
+        // Drop a category earlier M6.1 builds claimed but never implemented:
+        // with COMLESS declared, TextInputHost (which draws the modern language
+        // switcher, in an AppContainer) tries a COM-less load, fails, and hides
+        // the TIP from the switcher while Settings still lists it. Best-effort
+        // so a re-register cleans up without a prior `regsvr32 /u`.
+        let _ = categories.UnregisterCategory(&CLSID_XLIT, &GUID_TFCAT_TIPCAP_COMLESS, &CLSID_XLIT);
         for cat in CATEGORIES {
             categories.RegisterCategory(&CLSID_XLIT, cat, &CLSID_XLIT)?;
         }
@@ -130,16 +136,17 @@ pub(crate) fn unregister() -> Result<()> {
 }
 
 /// Categories this text service claims. `GUID_TFCAT_TIP_KEYBOARD` makes it a
-/// keyboard TIP; the `TIPCAP_*` entries tell Windows 8+ it is safe to surface in
-/// immersive/UWP contexts and the taskbar input indicator. Without
-/// `IMMERSIVESUPPORT` the modern switcher hides the profile entirely.
+/// keyboard TIP; `IMMERSIVESUPPORT` + `SYSTRAYSUPPORT` are what get it into the
+/// Windows 8+ modern language switcher / taskbar indicator. The rest are plain
+/// capability flags. `COMLESS` is deliberately absent — it changes the load
+/// contract (AppContainer hosts attempt a COM-less load) and this DLL is a
+/// classic in-proc COM server only.
 const CATEGORIES: &[GUID] = &[
     GUID_TFCAT_TIP_KEYBOARD,
     GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT,
     GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT,
     GUID_TFCAT_TIPCAP_UIELEMENTENABLED,
     GUID_TFCAT_TIPCAP_SECUREMODE,
-    GUID_TFCAT_TIPCAP_COMLESS,
     GUID_TFCAT_TIPCAP_INPUTMODECOMPARTMENT,
 ];
 
