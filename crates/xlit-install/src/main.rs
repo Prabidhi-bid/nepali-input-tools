@@ -13,6 +13,8 @@
 //!   4. write the 32-bit CLSID keys directly into the WOW6432Node view;
 //!   5. drop back to the user's own session to add the keyboard to the language
 //!      list, which is per-user and does not stick when written while elevated.
+//!   6. restart the processes that host text input — including the shell,
+//!      which otherwise keeps the previous DLL mapped until the next logon.
 //!
 //! **Why step 4 is registry writes rather than a second `DllRegisterServer`.**
 //! The TSF profile and categories are machine-wide and bitness-independent —
@@ -182,6 +184,7 @@ fn install_flow() -> Result<(), String> {
     }
     add_keyboard()?;
     restart_input_hosts();
+    restart_tip_hosts();
     println!();
     println!("Installed. \"{APP_NAME}\" is registered and added to your keyboard list.");
     println!("Switch to it with the taskbar language button or Win+Space.");
@@ -197,6 +200,7 @@ fn uninstall_flow() -> Result<(), String> {
         wait_for(|| !tsf_profile_registered(), false)?;
     }
     restart_input_hosts();
+    restart_tip_hosts();
     println!("Removed.");
     Ok(())
 }
@@ -271,8 +275,10 @@ fn remove_keyboard() {
     let _ = layout_or_tip(2);
 }
 
-/// The text-input hosts keep the old registration mapped; restarting them is
-/// what makes the change visible without signing out. They come back on their own.
+/// The cheap half: the two brokers that cache the registration. They come back
+/// on their own and restarting them costs the user nothing, so this runs from
+/// both halves of the install. Applications that have already *loaded* the DLL
+/// need [`restart_tip_hosts`] instead.
 fn restart_input_hosts() {
     for proc in ["ctfmon.exe", "TextInputHost.exe"] {
         let _ = std::process::Command::new("taskkill")
@@ -281,6 +287,59 @@ fn restart_input_hosts() {
             .stderr(std::process::Stdio::null())
             .status();
     }
+}
+
+/// Restart the long-lived processes that host text input for the whole
+/// session.
+///
+/// A process that has already mapped the text service keeps that DLL image
+/// for its lifetime, whatever we write to disk — renaming the old file does
+/// not touch it. `explorer.exe` (the taskbar and every File Explorer window)
+/// and `SearchHost.exe` (the Start menu search box) run from logon to logoff,
+/// so without this an upgrade never reaches the two places everybody types
+/// into, and a bug fixed in the new build goes on looking unfixed.
+///
+/// Only the user-session half may call this. The elevated child must not: a
+/// shell it relaunched would inherit elevation, and everything started from
+/// the taskbar afterwards would run as administrator.
+fn restart_tip_hosts() {
+    println!("Restarting the desktop shell so it picks up the new version...");
+    // SearchHost is started on demand by the shell, so it needs no relaunch.
+    for proc in ["SearchHost.exe", "explorer.exe"] {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/f", "/im", proc])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+    // Windows brings the shell back by itself when AutoRestartShell is set,
+    // which is the default. Wait for that rather than racing it.
+    for _ in 0..40 {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        if process_running("explorer.exe") {
+            return;
+        }
+    }
+    if is_elevated() {
+        // Starting it here would hand the whole desktop our elevated token.
+        println!("warning: the desktop did not come back on its own. Open Task");
+        println!("         Manager (Ctrl+Shift+Esc) and run \"explorer.exe\".");
+    } else {
+        let _ = std::process::Command::new("explorer.exe").spawn();
+    }
+}
+
+/// Whether any process with this image name is running.
+fn process_running(image: &str) -> bool {
+    std::process::Command::new("tasklist")
+        .args(["/fi", &format!("IMAGENAME eq {image}"), "/nh"])
+        .output()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .to_lowercase()
+                .contains(&image.to_lowercase())
+        })
+        .unwrap_or(false)
 }
 
 // ---------------------------------------------------------------------------
