@@ -8,6 +8,8 @@ members = [
     "crates/xlit-config",
     "crates/xlit-install",
     "frontends/windows-tsf",
+    "frontends/linux-ibus",
+    "frontends/linux-fcitx5",
 ]
 
 [workspace.package]

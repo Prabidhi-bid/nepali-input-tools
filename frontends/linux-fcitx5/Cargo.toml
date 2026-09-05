@@ -1,0 +1,17 @@
+[package]
+name = "xlit-fcitx5"
+version = "0.1.0"
+description = "Fcitx5 input method for the xlit transliteration engine (Linux / KDE)."
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "xlit_fcitx5"
+# cdylib for the addon to link against; rlib so the state machine can be tested.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+xlit-core = { path = "../../crates/xlit-core" }
+xlit-dict = { path = "../../crates/xlit-dict" }
+xlit-learn = { path = "../../crates/xlit-learn" }

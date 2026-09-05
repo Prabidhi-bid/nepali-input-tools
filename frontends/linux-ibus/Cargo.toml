@@ -1,0 +1,21 @@
+[package]
+name = "xlit-ibus"
+version = "0.1.0"
+description = "IBus input method engine for the xlit transliteration engine (Linux)."
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "xlit-ibus"
+path = "src/main.rs"
+
+[dependencies]
+xlit-core = { path = "../../crates/xlit-core" }
+xlit-dict = { path = "../../crates/xlit-dict" }
+xlit-learn = { path = "../../crates/xlit-learn" }
+
+[target.'cfg(unix)'.dependencies]
+zbus = { version = "4", default-features = false, features = ["tokio"] }
+zvariant = "4"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }

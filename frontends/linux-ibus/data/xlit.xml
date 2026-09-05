@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  IBus component description.
+
+  Install to /usr/share/ibus/component/xlit.xml (or
+  ~/.local/share/ibus/component/ for a single user), then restart ibus-daemon.
+  <exec> must be the absolute path to the installed binary; <name> here must
+  match BUS_NAME in src/main.rs.
+-->
+<component>
+  <name>org.freedesktop.IBus.Xlit</name>
+  <description>Nepali transliteration input method</description>
+  <exec>/usr/lib/ibus/xlit-ibus --ibus</exec>
+  <version>0.1.0</version>
+  <author>Prabidhi.bid</author>
+  <license>MIT OR Apache-2.0</license>
+  <homepage></homepage>
+  <textdomain>xlit</textdomain>
+
+  <engines>
+    <engine>
+      <name>xlit-ne</name>
+      <language>ne</language>
+      <license>MIT OR Apache-2.0</license>
+      <author>Prabidhi.bid</author>
+      <layout>us</layout>
+      <longname>Nepali (transliteration)</longname>
+      <description>Type Nepali phonetically in Latin: namaste becomes नमस्ते.</description>
+      <rank>99</rank>
+      <symbol>ने</symbol>
+    </engine>
+  </engines>
+</component>
