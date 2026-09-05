@@ -14,6 +14,23 @@ members = [
     "frontends/linux-fcitx5",
 ]
 
+# Everything that builds on every platform. `xlit-config`, `xlit-install` and
+# the TSF text service are Windows programs — Win32 windows, COM, the registry —
+# and are `#![cfg(windows)]` all the way down, so a bare `cargo build` on Linux
+# would otherwise fail on three crates that have nothing to say there. Build
+# them explicitly (`cargo build -p xlit-tsf`) or from Windows, where
+# `--workspace` covers them.
+default-members = [
+    "crates/xlit-core",
+    "crates/xlit-dict",
+    "crates/xlit-learn",
+    "crates/xlit-ipc",
+    "crates/xlit-daemon",
+    "crates/xlit-cli",
+    "frontends/linux-ibus",
+    "frontends/linux-fcitx5",
+]
+
 [workspace.package]
 edition = "2021"
 license = "MIT OR Apache-2.0"
