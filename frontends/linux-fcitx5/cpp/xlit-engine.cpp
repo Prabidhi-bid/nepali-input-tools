@@ -11,6 +11,9 @@
 #include <fcitx-utils/key.h>
 #include <fcitx/addonfactory.h>
 #include <fcitx/addoninstance.h>
+// addonfactory.h only forward-declares AddonManager, and the factory below
+// calls manager->instance(); without this the class is incomplete at that call.
+#include <fcitx/addonmanager.h>
 #include <fcitx/candidatelist.h>
 #include <fcitx/inputcontext.h>
 #include <fcitx/inputcontextproperty.h>

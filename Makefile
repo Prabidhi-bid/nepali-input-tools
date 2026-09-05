@@ -28,19 +28,33 @@ TARGET_DIR ?= target/release
 INSTALL ?= install
 CMAKE ?= cmake
 
-# Fcitx5 keeps its addons next to its own library. Ask pkg-config, since the
-# path is /usr/lib/x86_64-linux-gnu on Debian and /usr/lib64 on Fedora.
-FCITX5_LIBDIR ?= $(shell pkg-config --variable=libdir Fcitx5Core 2>/dev/null || echo $(PREFIX)/lib)
+# Where Fcitx5's own CMake package lives. Finding *this* rather than asking
+# pkg-config is deliberate: Fcitx5 ships CMake config packages and Debian's
+# libfcitx5core-dev installs no .pc file, so a pkg-config probe reported the
+# development files missing on a machine that had them — and quietly built a
+# release with the addon left out.
+FCITX5_CMAKE_DIR := $(firstword $(wildcard     /usr/lib/*/cmake/Fcitx5Core /usr/lib/cmake/Fcitx5Core     /usr/lib64/cmake/Fcitx5Core /usr/local/lib/*/cmake/Fcitx5Core))
+
+# Fcitx5 keeps its addons next to its own library: /usr/lib/x86_64-linux-gnu on
+# Debian, /usr/lib64 on Fedora. Two directories up from the CMake package is
+# exactly that, whichever it is.
+FCITX5_LIBDIR ?= $(if $(FCITX5_CMAKE_DIR),$(abspath $(FCITX5_CMAKE_DIR)/../..),$(PREFIX)/lib)
 FCITX5_DATADIR ?= $(DATADIR)/fcitx5
 
-# Whether the Fcitx5 addon can be built at all: it is C++ and needs the
-# development packages. Everything else builds with cargo alone.
-HAVE_FCITX5 := $(shell pkg-config --exists Fcitx5Core 2>/dev/null && command -v $(CMAKE) >/dev/null 2>&1 && echo yes)
+# Whether the Fcitx5 addon can be built at all: it is C++ and needs both the
+# development package and cmake. Everything else builds with cargo alone.
+HAVE_FCITX5 := $(shell test -n "$(FCITX5_CMAKE_DIR)" && command -v $(CMAKE) >/dev/null 2>&1 && echo yes)
 
 .PHONY: all build build-fcitx5 check install install-common install-ibus \
-        install-fcitx5 uninstall dist clean help
+        install-fcitx5 uninstall dist clean help print-%
 
 all: build
+
+# Read one variable's value, so a packaging script can ask this Makefile what it
+# decided instead of re-implementing the decision and getting it wrong:
+#   make -s print-HAVE_FCITX5
+print-%:
+	@echo '$($*)'
 
 help:
 	@echo "targets: build, build-fcitx5, check, install, uninstall, dist, clean"

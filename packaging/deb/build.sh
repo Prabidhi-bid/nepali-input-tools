@@ -85,7 +85,9 @@ stage xlit-ibus install-ibus "xlit-common (= $version), ibus" \
  a candidate list for the spellings the sounds leave open. IBus is the
  input framework GNOME and most distributions use by default."
 
-if pkg-config --exists Fcitx5Core 2>/dev/null; then
+# `make` knows how to look for Fcitx5 (a CMake package, not a pkg-config one);
+# ask it rather than keeping a second, differently-wrong probe here.
+if [ "$( cd "$root" && make -s print-HAVE_FCITX5 )" = yes ]; then
     ( cd "$root" && make build-fcitx5 >/dev/null )
     stage xlit-fcitx5 install-fcitx5 "xlit-common (= $version), fcitx5" \
         "Nepali transliteration input method for Fcitx5
