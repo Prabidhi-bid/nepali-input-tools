@@ -4,8 +4,9 @@
 //! frequency**. Three cheap lookups per input, all against the same structure:
 //!
 //! 1. **exact**  — the rule output is a real word: lock it in.
-//! 2. **fuzzy**  — edit-distance ≤ 1: fixes vowel-length (`ि`/`ी`), anusvara,
-//!    and sibilant slips the rule engine can't know about.
+//! 2. **fuzzy**  — edit-distance ≤ 1, and *only* across characters the Latin
+//!    spelling cannot settle: vowel length (`ि`/`ी`), sibilants, b/v, nasal
+//!    marks. Anything else is a different word, not a correction.
 //! 3. **prefix** — longer words starting with what was typed: completions.
 //!
 //! The FST is memory-mapped (`DictRanker::open`) so a large dictionary costs
@@ -16,6 +17,11 @@
 //! `fst`'s `Levenshtein` automaton — that one is byte-oriented and silently
 //! matches nothing for multi-byte UTF-8 (Devanagari). It's O(dict) per miss;
 //! a BK-tree / SymSpell index is the upgrade if profiling ever asks for it.
+//!
+//! Restricting *which* substitutions count is what keeps this layer honest. An
+//! unrestricted distance of 1 puts every short word within reach of every
+//! other: काम is one edit from both साम and नाम, and outranked them both
+//! because a dictionary hit scores above a literal transliteration.
 
 use std::collections::BTreeMap;
 use std::io;
@@ -135,22 +141,90 @@ fn freq_bonus(freq: u64) -> i32 {
     (((freq.max(1) as f64).ln() * 5.0) as i32).clamp(0, 80)
 }
 
-/// Char-level Levenshtein with an early cutoff. Returns the distance if it is
-/// `<= max`, otherwise `None`. Two rolling rows; bails once a whole row exceeds
-/// `max`.
+/// Characters a reader would accept as the same word.
+///
+/// This is the whole difference between a spelling correction and a wrong
+/// answer. The rule engine is never wrong about the *sounds* the user typed, so
+/// a dictionary word may only outrank its literal output when the difference is
+/// something the Latin spelling genuinely cannot settle: vowel length, which
+/// sibilant, b versus v, and which nasal mark. A substitution outside these
+/// classes means a different word, not a typo - `saam` is साम, and काम is not a
+/// correction of it.
+fn confusable(a: char, b: char) -> bool {
+    /// Each string is one class of mutually interchangeable characters.
+    const CLASSES: &[&str] = &[
+        "\u{093F}\u{0940}", // ि ी  short/long i matra
+        "\u{0941}\u{0942}", // ु ू  short/long u matra
+        "\u{0947}\u{0948}", // े ै
+        "\u{094B}\u{094C}", // ो ौ
+        "\u{0907}\u{0908}", // इ ई
+        "\u{0909}\u{090A}", // उ ऊ
+        "\u{090F}\u{0910}", // ए ऐ
+        "\u{0913}\u{0914}", // ओ औ
+        "\u{0905}\u{0906}", // अ आ
+        "\u{0938}\u{0936}\u{0937}", // स श ष
+        "\u{092C}\u{0935}", // ब व
+        // Dental vs retroflex. Romanised Nepali writes both with the same Latin
+        // letter unless the typist shifts (t/T), and English loanwords take the
+        // retroflex, so `kriket` for क्रिकेट is the norm rather than a mistake.
+        "\u{0924}\u{091F}", // त ट
+        "\u{0925}\u{0920}", // थ ठ
+        "\u{0926}\u{0921}", // द ड
+        "\u{0927}\u{0922}", // ध ढ
+        "\u{0928}\u{0923}", // न ण
+        "\u{0901}\u{0902}", // ँ ं
+    ];
+    a == b || CLASSES.iter().any(|c| c.contains(a) && c.contains(b))
+}
+
+/// Marks whose presence or absence is a plausible slip, as opposed to a letter
+/// whose absence makes it another word entirely.
+///
+/// Devanagari matras and virama (U+093E..U+094D), plus chandrabindu, anusvara
+/// and visarga (U+0901..U+0903).
+fn is_weak_mark(c: char) -> bool {
+    matches!(c, '\u{093E}'..='\u{094D}' | '\u{0901}'..='\u{0903}')
+}
+
+/// Char-level edit distance with an early cutoff, counting only the edits above
+/// as costing one; anything else is priced beyond `max` so the pair is rejected
+/// rather than merely ranked lower. Returns the distance if it is `<= max`.
+/// Two rolling rows; bails once a whole row exceeds `max`.
 fn bounded_levenshtein(a: &[char], b: &[char], max: usize) -> Option<usize> {
     let (n, m) = (a.len(), b.len());
     if n.abs_diff(m) > max {
         return None;
     }
-    let mut prev: Vec<usize> = (0..=m).collect();
+    // One past the budget: arithmetic stays saturating, so this is "impossible"
+    // without needing a separate sentinel.
+    let over = max + 1;
+    let gap = |c: char| if is_weak_mark(c) { 1 } else { over };
+    let swap = |x: char, y: char| {
+        if x == y {
+            0
+        } else if confusable(x, y) {
+            1
+        } else {
+            over
+        }
+    };
+
+    let mut prev: Vec<usize> = Vec::with_capacity(m + 1);
+    prev.push(0);
+    for j in 1..=m {
+        let v = prev[j - 1].saturating_add(gap(b[j - 1])).min(over);
+        prev.push(v);
+    }
     let mut curr: Vec<usize> = vec![0; m + 1];
     for i in 1..=n {
-        curr[0] = i;
+        curr[0] = prev[0].saturating_add(gap(a[i - 1])).min(over);
         let mut row_min = curr[0];
         for j in 1..=m {
-            let cost = usize::from(a[i - 1] != b[j - 1]);
-            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
+            curr[j] = prev[j]
+                .saturating_add(gap(a[i - 1]))
+                .min(curr[j - 1].saturating_add(gap(b[j - 1])))
+                .min(prev[j - 1].saturating_add(swap(a[i - 1], b[j - 1])))
+                .min(over);
             row_min = row_min.min(curr[j]);
         }
         if row_min > max {
@@ -286,6 +360,39 @@ mod tests {
             texts.iter().any(|t| t.starts_with("नेपाल") && t != "नेपाल"),
             "got {texts:?}"
         );
+    }
+
+    #[test]
+    fn literal_wins_over_an_unrelated_word() {
+        // Regression. With an unrestricted edit distance of 1, काम sat one
+        // substitution from both साम and नाम, and a dictionary hit outscores a
+        // literal transliteration - so typing either produced काम, with the
+        // right answer third. A different consonant is a different word.
+        for (input, expect) in [("saam", "साम"), ("naam", "नाम")] {
+            let c = engine().candidates(input);
+            assert_eq!(c[0].text, expect, "{input} gave {:?}", c[0].text);
+            assert!(
+                !c.iter().any(|x| x.text == "काम"),
+                "{input} should not offer काम at all, got {:?}",
+                c.iter().map(|x| &x.text).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn dental_retroflex_is_still_corrected() {
+        // The other half of the trade: t/T is a real ambiguity in romanised
+        // Nepali, and English loanwords take the retroflex.
+        assert_eq!(engine().candidates("kriket")[0].text, "क्रिकेट");
+    }
+
+    #[test]
+    fn only_confusable_substitutions_count() {
+        assert!(confusable('\u{093F}', '\u{0940}')); // ि ी  vowel length
+        assert!(confusable('\u{0938}', '\u{0936}')); // स श  sibilants
+        assert!(confusable('\u{0924}', '\u{091F}')); // त ट  dental/retroflex
+        assert!(!confusable('\u{0938}', '\u{0915}')); // स क  different words
+        assert!(!confusable('\u{0928}', '\u{0915}')); // न क
     }
 
     #[test]
