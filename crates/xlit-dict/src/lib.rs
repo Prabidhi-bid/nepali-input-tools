@@ -35,6 +35,21 @@ use xlit_core::{merge_candidate, Candidate, Ranker, Source};
 
 const SEED_TSV: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/seed/ne.tsv"));
 
+/// Nepali postpositions and case markers, most frequent first.
+///
+/// Nepali attaches these productively, so a dictionary can never list every
+/// inflected form - काम is in the seed, कामको and कामले never will be. Building
+/// them from a word we know is real gives the candidate list the shape a
+/// Nepali typist expects, at no cost in dictionary size.
+const SUFFIXES: &[&str] = &[
+    "\u{0915}\u{094B}",                     // को  genitive
+    "\u{0932}\u{0947}",                     // ले  ergative / instrumental
+    "\u{092E}\u{093E}",                     // मा  locative
+    "\u{0932}\u{093E}\u{0908}",             // लाई dative / accusative
+    "\u{0939}\u{0930}\u{0942}",             // हरू plural
+    "\u{092C}\u{093E}\u{091F}",             // बाट ablative
+];
+
 #[derive(Clone, Copy)]
 pub struct DictOpts {
     /// Max edit distance for the fuzzy pass (1 is plenty for typo correction).
@@ -43,11 +58,13 @@ pub struct DictOpts {
     pub max_fuzzy: usize,
     /// Cap on prefix completions added per input.
     pub max_completions: usize,
+    /// Cap on postposition forms built from an exact dictionary hit.
+    pub max_suffixes: usize,
 }
 
 impl Default for DictOpts {
     fn default() -> Self {
-        DictOpts { max_edit_distance: 1, max_fuzzy: 5, max_completions: 3 }
+        DictOpts { max_edit_distance: 1, max_fuzzy: 3, max_completions: 3, max_suffixes: 4 }
     }
 }
 
@@ -177,13 +194,13 @@ fn confusable(a: char, b: char) -> bool {
     a == b || CLASSES.iter().any(|c| c.contains(a) && c.contains(b))
 }
 
-/// Marks whose presence or absence is a plausible slip, as opposed to a letter
-/// whose absence makes it another word entirely.
+/// Marks whose presence or absence is a plausible slip.
 ///
-/// Devanagari matras and virama (U+093E..U+094D), plus chandrabindu, anusvara
-/// and visarga (U+0901..U+0903).
+/// Only the nasal marks and visarga (U+0901..U+0903), which a typist genuinely
+/// omits. Matras and virama are deliberately *not* here: dropping one makes a
+/// different word, and allowing it offered नेपाल as a correction of नेपालि.
 fn is_weak_mark(c: char) -> bool {
-    matches!(c, '\u{093E}'..='\u{094D}' | '\u{0901}'..='\u{0903}')
+    matches!(c, '\u{0901}'..='\u{0903}')
 }
 
 /// Char-level edit distance with an early cutoff, counting only the edits above
@@ -253,9 +270,10 @@ impl<D: AsRef<[u8]> + Send + Sync> Ranker for DictRanker<D> {
 
         for word in words {
             let word_len = word.chars().count();
-
             // 1. exact match
+            let mut is_a_word = false;
             if let Some(freq) = self.map.get(word.as_bytes()) {
+                is_a_word = true;
                 merge_candidate(
                     &mut cands,
                     word.clone(),
@@ -294,7 +312,22 @@ impl<D: AsRef<[u8]> + Send + Sync> Ranker for DictRanker<D> {
                 }
             }
 
-            // 3. prefix completions
+            // 3. inflected forms, but only of a word the dictionary vouches for
+            // — suffixing a guess would just multiply the guess. Scored below
+            // the exact hit and in postposition-frequency order, so `kaam`
+            // reads काम, कामको, कामले, ...
+            if is_a_word {
+                for (i, suffix) in SUFFIXES.iter().take(self.opts.max_suffixes).enumerate() {
+                    merge_candidate(
+                        &mut cands,
+                        format!("{word}{suffix}"),
+                        150 - i as i32,
+                        Source::Dictionary,
+                    );
+                }
+            }
+
+            // 4. prefix completions: real longer words that start with this one.
             if word_len >= 2 {
                 let pfx = Str::new(word.as_str()).starts_with();
                 for (s, v) in self.collect(pfx, &word, self.opts.max_completions) {
@@ -393,6 +426,34 @@ mod tests {
         assert!(confusable('\u{0924}', '\u{091F}')); // त ट  dental/retroflex
         assert!(!confusable('\u{0938}', '\u{0915}')); // स क  different words
         assert!(!confusable('\u{0928}', '\u{0915}')); // न क
+    }
+
+    #[test]
+    fn known_word_offers_its_postpositions() {
+        let texts: Vec<String> = engine()
+            .candidates("kaam")
+            .iter()
+            .map(|c| c.text.clone())
+            .collect();
+        assert_eq!(texts[0], "काम", "the bare word comes first");
+        for want in ["कामको", "कामले"] {
+            assert!(texts.iter().any(|t| t == want), "missing {want} in {texts:?}");
+        }
+    }
+
+    #[test]
+    fn postpositions_are_not_built_from_guesses() {
+        // साम is not in the dictionary, so there is nothing to inflect; making
+        // सामको out of an unverified word would just multiply the guess.
+        let texts: Vec<String> = engine()
+            .candidates("saam")
+            .iter()
+            .map(|c| c.text.clone())
+            .collect();
+        assert!(
+            !texts.iter().any(|t| t.starts_with("सामक")),
+            "should not inflect an unknown word, got {texts:?}"
+        );
     }
 
     #[test]

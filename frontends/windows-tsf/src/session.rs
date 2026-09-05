@@ -42,6 +42,10 @@ pub struct Session {
     pub cands: Vec<String>,
     /// Index into `cands` that Space / Enter would commit.
     pub sel: usize,
+    /// Whether the user actually picked from the list for this word, rather
+    /// than accepting whatever was on top. Only a real choice is worth
+    /// learning — see [`commit`].
+    chose: bool,
     /// The open composition, if we are mid-word.
     comp: Option<ITfComposition>,
     /// False after the toggle key: keystrokes pass straight through.
@@ -63,6 +67,7 @@ impl Session {
             buf: String::new(),
             cands: Vec::new(),
             sel: 0,
+            chose: false,
             comp: None,
             enabled: true,
             window: CandWindow::new(),
@@ -87,6 +92,7 @@ impl Session {
         self.buf.clear();
         self.cands.clear();
         self.sel = 0;
+        self.chose = false;
         self.comp = None;
         self.window.hide();
     }
@@ -146,6 +152,7 @@ pub fn move_selection(sess: &SharedSession, ctx: &ITfContext, delta: i32) {
         }
         let n = s.cands.len() as i32;
         s.sel = (((s.sel as i32 + delta) % n + n) % n) as usize;
+        s.chose = true;
         s.tid
     };
     render(sess, ctx, tid);
@@ -159,6 +166,7 @@ pub fn select_and_commit(sess: &SharedSession, ctx: &ITfContext, idx: usize, tai
             return false;
         }
         s.sel = idx;
+        s.chose = true;
     }
     commit(sess, ctx, tail);
     true
@@ -168,14 +176,20 @@ pub fn select_and_commit(sess: &SharedSession, ctx: &ITfContext, idx: usize, tai
 /// break character that triggered the commit), teach the learning store, and
 /// close the composition.
 pub fn commit(sess: &SharedSession, ctx: &ITfContext, tail: &str) {
-    let (input, chosen) = {
+    let (input, chosen, chose) = {
         let s = sess.borrow();
-        (s.buf.clone(), s.preview())
+        (s.buf.clone(), s.preview(), s.chose)
     };
     finish(sess, ctx, &format!("{chosen}{tail}"));
-    // Only learn a real choice — not the raw passthrough, and not a word the
-    // engine would have produced anyway with no user involvement.
-    if !input.is_empty() && chosen != input {
+
+    // Learn only what the user actually chose.
+    //
+    // Accepting the top candidate by pressing space is not a choice, it is just
+    // typing, and recording it was a ratchet: the first answer for an input -
+    // right or wrong - was written at a score that outranks the dictionary, so
+    // it won for ever after. That is how "naam" came to mean काम and stayed
+    // that way even once the ranking behind it was fixed.
+    if chose && !input.is_empty() && chosen != input {
         engine::commit(&input, &chosen);
     }
 }
