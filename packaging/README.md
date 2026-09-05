@@ -68,16 +68,46 @@ for a hand build so a distribution package cannot collide with it.
 
 ## After installing
 
-IBus caches the engines it knows about, so a newly installed engine appears
+IBus caches the engines it knows about, so a newly installed one appears only
 after the daemon restarts:
 
 ```bash
-ibus restart
+ibus restart; sleep 3; ibus list-engine | grep xlit
 ```
 
-Then add it in *Settings → Keyboard → Input Sources → + → Nepali → "Nepali
-(transliteration)"*, or `ibus engine xlit-ne`. For Fcitx5, it is *System
-Settings → Input Method → + → Nepali*.
+The `sleep` is not decoration. `ibus restart` returns as soon as it has asked
+the daemon to go away, and anything chained onto it with `&&` runs while the
+daemon is still coming back:
+
+```text
+IBUS-CRITICAL **: ibus_bus_set_global_engine: assertion 'IBUS_IS_BUS (bus)' failed
+Set global engine failed.
+```
+
+That is the race, not a broken install. Also: never `sudo ibus`. IBus is
+per-user and lives on your session bus, and root has no session bus — it can
+only answer `Can't connect to IBus`. Installing the package needs root;
+nothing after it does.
+
+### Selecting it
+
+On **GNOME**, the desktop owns the list of input sources and re-asserts it, so
+`ibus engine xlit-ne` alone does not stick — the next restart puts you back on
+the keyboard layout you had. Add it as a source instead:
+
+*Settings → Keyboard → Input Sources → + → Nepali → "Nepali (transliteration)"*
+
+or, equivalently:
+
+```bash
+gsettings set org.gnome.desktop.input-sources sources "[('xkb', 'us'), ('ibus', 'xlit-ne')]"
+```
+
+Then **Super+Space** switches between them. To remove it again, set that key
+back to `[('xkb', 'us')]`.
+
+On desktops that do not manage the list themselves, `ibus engine xlit-ne` is
+enough. For Fcitx5 it is *System Settings → Input Method → + → Nepali*.
 
 The daemon is optional on Linux: each frontend is one long-lived process and
 links the engine directly, so there is nothing to share. Start it if you want
@@ -89,8 +119,14 @@ systemctl --user enable --now xlit-daemon
 
 ## Tested how far
 
-The Debian packages are built and their contents checked on Ubuntu 24.04. The
-RPM spec and the PKGBUILD are written against the same Makefile targets but
+The Debian packages are built, installed and run on Ubuntu 24.04 (GNOME,
+Wayland): `apt install` of both, IBus lists `xlit-ne` from the packaged
+component file, selecting it starts `/usr/libexec/ibus-engine-xlit`, `xlit` and
+`xlit-daemon` work from `/usr/bin`, and the shipped unit starts under
+`systemctl --user` and serves clients over its socket. Resident memory is about
+4 MB for each of the daemon and the engine.
+
+The RPM spec and the PKGBUILD are written against the same Makefile targets but
 have **not** been built — there is no `rpmbuild` or `makepkg` on the machine
 they were written on. Expect to fix something on the first real build, most
 likely a missing `BuildRequires` or a path that Fedora spells differently.

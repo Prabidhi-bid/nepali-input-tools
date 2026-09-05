@@ -17,8 +17,32 @@ verb forms, the same case and vowel folding.
 ./frontends/linux-ibus/install.sh --user    # into ~/.local, no sudo
 ```
 
-Then pick **Nepali (transliteration)** in Settings > Keyboard > Input Sources,
-or `ibus engine xlit-ne`.
+Or install the packages, which is what most people should do:
+[`packaging/`](../../packaging/README.md).
+
+Either way, IBus has to re-read its component directory before it will admit
+the engine exists:
+
+```sh
+ibus restart; sleep 3; ibus list-engine | grep xlit
+```
+
+Give it that moment. `ibus restart && ibus engine xlit-ne` fails with
+`IBUS-CRITICAL ... assertion 'IBUS_IS_BUS (bus)' failed` because the second
+command connects while the daemon is still starting. And never `sudo ibus`:
+IBus is per-user, root has no session bus, and it can only say `Can't connect
+to IBus`.
+
+Then pick **Nepali (transliteration)** in Settings > Keyboard > Input Sources.
+On GNOME that step is not optional — the desktop owns the source list and
+re-asserts it, so `ibus engine xlit-ne` on its own is undone by the next
+restart. The command-line equivalent:
+
+```sh
+gsettings set org.gnome.desktop.input-sources sources "[('xkb', 'us'), ('ibus', 'xlit-ne')]"
+```
+
+**Super+Space** then switches between English and Nepali.
 
 ## How it behaves
 
@@ -59,7 +83,18 @@ or wrong — outrank the dictionary for ever after.
 
 ## Status
 
-Type-checked against `x86_64-unknown-linux-gnu`, **not yet run**: it was written
-on a Windows machine, so no part of it has faced a live `ibus-daemon`. Expect the
-first session to need adjustment — most likely in the lookup-table signature or
-the key handling, which are the parts a type-checker cannot vouch for.
+Installed from the `.deb` and run against a live `ibus-daemon` on Ubuntu 24.04
+(GNOME, Wayland): the component file is read, `xlit-ne` appears in
+`ibus list-engine`, and selecting it starts `/usr/libexec/ibus-engine-xlit`,
+which stays up at about 4 MB resident.
+
+What that does *not* cover is the keystroke path — the preedit, the candidate
+window, the commit — because driving those means typing into a focused window,
+which no test here can do. The engine behind them is the same code the CLI
+exercises, but the D-Bus surface in [`src/ibus.rs`](src/ibus.rs) is hand-written
+and a wrong signature draws nothing rather than failing loudly. If something
+looks wrong while typing, watch it happen:
+
+```sh
+journalctl --user -f | grep xlit
+```

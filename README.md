@@ -61,12 +61,14 @@ packaging/deb/build.sh && sudo apt install ./packaging/build/*.deb
 ```
 
 ```bash
-ibus restart
+ibus restart; sleep 3; ibus engine xlit-ne
 ```
 
-Then add *Nepali (transliteration)* in Settings → Keyboard → Input Sources.
-Fedora, Arch and a plain `sudo make install` are covered in
-[packaging/README.md](packaging/README.md).
+Give IBus that moment to come back up — chaining the two with `&&` connects
+before the daemon is listening and fails. On GNOME, also add *Nepali
+(transliteration)* in Settings → Keyboard → Input Sources, because the desktop
+owns the source list; **Super+Space** then switches. Fedora, Arch and a plain
+`sudo make install` are covered in [packaging/README.md](packaging/README.md).
 
 ## Build & run
 
