@@ -28,16 +28,16 @@ fn score(cases: &[Case]) -> xlit_eval::Report {
 fn overall_accuracy_does_not_regress() {
     let report = score(&builtin_set());
     assert!(
-        report.top1_rate() >= 0.78,
+        report.top1_rate() >= 0.90,
         "top-1 fell to {:.1}%",
         report.top1_rate() * 100.0
     );
     assert!(
-        report.top5_rate() >= 0.85,
+        report.top5_rate() >= 0.97,
         "top-5 fell to {:.1}%",
         report.top5_rate() * 100.0
     );
-    assert!(report.cer() <= 0.08, "CER rose to {:.3}", report.cer());
+    assert!(report.cer() <= 0.04, "CER rose to {:.3}", report.cer());
 }
 
 /// Rows spelled in the schema's own conventions need no dictionary at all: if
@@ -75,7 +75,7 @@ fn casual_typing_still_clears_its_own_floor() {
         .collect();
     let report = score(&cases);
     assert!(
-        report.top1_rate() >= 0.75,
+        report.top1_rate() >= 0.89,
         "casual top-1 fell to {:.1}%",
         report.top1_rate() * 100.0
     );

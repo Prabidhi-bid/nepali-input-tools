@@ -15,6 +15,26 @@
 # Groups: English loanwords, then Nepali places, then the wider world, then
 # names. All in their accepted Nepali spelling — नेपाली orthography, not Hindi.
 
+# ---- everyday words the generated lexicon simply does not have ---------------
+# nep_dict is a lexicon rather than a word list and skips ordinary vocabulary;
+# `data/extra-ne.txt` is the hatch for that, but it only takes effect when
+# mkwords.py is re-run against the source database. These are the ones the
+# accuracy harness caught.
+dudh	दूध
+duudh	दूध
+dhoka	ढोका
+dhokaa	ढोका
+dharti	धरती
+dhartii	धरती
+buwa	बुवा
+buva	बुवा
+chara	चरा
+charaa	चरा
+janchhu	जान्छु
+jaanchhu	जान्छु
+khanchhu	खान्छु
+khaanchhu	खान्छु
+
 # ---- computing and phones ---------------------------------------------------
 computer	कम्प्युटर
 kampyutar	कम्प्युटर

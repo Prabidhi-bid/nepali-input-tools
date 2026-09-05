@@ -20,8 +20,12 @@ use fst::{Automaton, IntoStreamer, Set, Streamer};
 
 use xlit_core::{merge_candidate, Candidate, Ranker, Source};
 
-/// The compiled set, built by `build.rs`.
+use crate::fold_key;
+
+/// The compiled sets, built by `build.rs`: keys as written, and the same words
+/// again under [`fold_key`] of those keys.
 static WORDS_FST: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ne-words.fst"));
+static FOLDED_FST: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ne-folded.fst"));
 
 /// Cap on completions offered for one input. The candidate window shows nine.
 const MAX_COMPLETIONS: usize = 12;
@@ -58,6 +62,9 @@ fn takes_postposition(word: &str) -> bool {
 
 pub struct WordList {
     set: Set<&'static [u8]>,
+    /// The same words keyed by [`fold_key`], which is how `sarkar` reaches
+    /// सरकार when the generated key spells the inherent vowel (`sarakaar`).
+    folded: Set<&'static [u8]>,
 }
 
 impl Default for WordList {
@@ -70,6 +77,7 @@ impl WordList {
     pub fn new() -> Self {
         WordList {
             set: Set::new(WORDS_FST).expect("compiled-in word fst must be valid"),
+            folded: Set::new(FOLDED_FST).expect("compiled-in folded fst must be valid"),
         }
     }
 
@@ -106,9 +114,24 @@ impl WordList {
 
     /// Words whose Latin key is exactly `input`.
     pub fn exact(&self, input: &str) -> Vec<String> {
+        self.lookup(&self.set, input)
+    }
+
+    /// Words that match once both sides are folded to the shape a typist would
+    /// produce: vowel length dropped, sibilants merged, the inherent vowel
+    /// squeezed out. Weaker evidence than [`exact`], and scored below it.
+    pub fn loose(&self, input: &str) -> Vec<String> {
+        let key = fold_key(input);
+        if key.is_empty() {
+            return Vec::new();
+        }
+        self.lookup(&self.folded, &key)
+    }
+
+    fn lookup(&self, set: &Set<&'static [u8]>, input: &str) -> Vec<String> {
         let mut out = Vec::new();
         let key = format!("{input}\t");
-        let mut stream = self.set.search(Str::new(&key).starts_with()).into_stream();
+        let mut stream = set.search(Str::new(&key).starts_with()).into_stream();
         while let Some(k) = stream.next() {
             if let Ok(s) = std::str::from_utf8(k) {
                 if let Some((_, word)) = s.split_once('\t') {
@@ -130,6 +153,16 @@ impl Ranker for WordList {
         // typed a word, spelled the way the dictionary spells it.
         for word in self.exact(input) {
             merge_candidate(&mut cands, word, 320, Source::Confirmed);
+        }
+
+        // Then the same question with both sides folded. This is what reaches
+        // the word when the typed spelling and the generated key disagree about
+        // things romanised Nepali does not settle — `sarkar` for a key that
+        // writes the inherent vowel, `manche` for one that doubles the aspirate,
+        // `bhasa` for one that spells the sibilant `sh`. Scored just under an
+        // exact key match, so spelling it the dictionary's way still wins.
+        for word in self.loose(input) {
+            merge_candidate(&mut cands, word, 315, Source::Confirmed);
         }
 
         // Word-final inherent vowels are dropped in the keys (अकबर is `akabar`,
@@ -155,9 +188,17 @@ impl Ranker for WordList {
             if stem.len() < 2 {
                 continue;
             }
-            for word in self.exact(stem) {
+            // Folded stems too, or the postposition split would only work for
+            // people who spell the stem the dictionary's way: `manchele` is
+            // मान्छे + ले exactly as much as `maanchhele` is.
+            for (word, score) in self
+                .exact(stem)
+                .into_iter()
+                .map(|w| (w, 300))
+                .chain(self.loose(stem).into_iter().map(|w| (w, 295)))
+            {
                 if takes_postposition(&word) {
-                    merge_candidate(&mut cands, format!("{word}{deva}"), 300, Source::Confirmed);
+                    merge_candidate(&mut cands, format!("{word}{deva}"), score, Source::Confirmed);
                 }
             }
         }
@@ -257,6 +298,40 @@ mod tests {
         // Hand-written keys add candidates, they do not take the top slot.
         assert_eq!(texts("bara")[0], "बर");
         assert!(texts("bara").iter().any(|t| t == "बारा"));
+    }
+
+    #[test]
+    fn casual_spelling_reaches_the_word_through_folding() {
+        // The generated key spells the inherent vowel and doubles the aspirate;
+        // people do neither. Both sides fold to the same shape.
+        for (typed, want) in [
+            ("sarkar", "सरकार"),
+            ("manche", "मान्छे"),
+            ("bhasa", "भाषा"),
+            ("hawa", "हावा"),
+            ("tarkari", "तरकारी"),
+            ("sabda", "शब्द"),
+        ] {
+            assert!(
+                texts(typed).iter().any(|t| t == want),
+                "{typed}: missing {want} in {:?}",
+                texts(typed)
+            );
+        }
+    }
+
+    #[test]
+    fn folding_does_not_merge_words_that_only_look_alike() {
+        // `khaanaa` and `kahaa~` both lose their inherent vowels to the same
+        // string, which is why that deletion happens when the list is built and
+        // never to what was typed. Typing खाना must not offer कहाँ first.
+        assert_eq!(texts("khana")[0], "खाना", "{:?}", texts("khana"));
+    }
+
+    #[test]
+    fn a_postposition_attaches_to_a_folded_stem_too() {
+        // मान्छे + ले, spelled the way people spell मान्छे.
+        assert!(texts("manchele").iter().any(|t| t == "मान्छेले"));
     }
 
     #[test]

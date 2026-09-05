@@ -58,15 +58,19 @@ The rest — `core`, `inflect`, `loan`, `proper` — are vocabulary groups.
 ## Baseline
 
 ```
-            cases    top-1    top-5     MRR     CER      (was, at introduction)
-overall       148    81.1%    87.2%   0.840   0.064      62.8% / 70.3% / 0.177
-casual        131    78.6%    85.5%   0.819   0.073      58.0% / 66.4% / 0.202
-core           88    75.0%    83.0%   0.788   0.101      unchanged
-inflect        22    72.7%    81.8%   0.773   0.060      unchanged
+            cases    top-1    top-5     MRR     CER      (at introduction)
+overall       148    93.2%    99.3%   0.962   0.032      62.8% / 70.3% / 0.177
+casual        131    92.4%    99.2%   0.957   0.037      58.0% / 66.4% / 0.202
+core           88    88.6%    98.9%   0.936   0.059      75.0% / 83.0% / 0.101
+inflect        22   100.0%   100.0%   1.000   0.000      72.7% / 81.8% / 0.060
 loan           16   100.0%   100.0%   1.000   0.000      25.0% / 31.2% / 0.553
 proper         22   100.0%   100.0%   1.000   0.000      31.8% / 36.4% / 0.281
 strict         17   100.0%   100.0%   1.000   0.000      unchanged
 ```
+
+Three changes got it there: Latin keys for loanwords and place names, folding
+those keys to the shape a typist produces, and ordering equally-confirmed words
+by how far they sit from the literal reading.
 
 **Read the `loan` and `proper` rows carefully.** They went to 100% because
 `xlit-dict/data/latin-keys-ne.tsv` now contains those words, keyed by the Latin
@@ -83,10 +87,12 @@ The rest of the table is the honest part:
 
 - **The rule engine is exact** on everything spelled its way. Nothing to fix
   there; the `strict` row is a regression tripwire.
-- **Core vocabulary at 75%** mostly fails by one character — `साठी` for `साथी`,
-  `फुल` for `फूल` — where the fuzzy pass does find the word but ranks it second.
-  A ranking problem rather than a coverage one, and the cheapest thing left.
-- **Inflected forms at 73%** are the same story one step along.
+- **Core vocabulary at 89%** is what is left, and most of the remaining misses are not
+  bugs: `tara` reads literally as तर, `phul` as फुल, `aama` as आम, and each of
+  those is itself a word. The engine deliberately keeps a literal reading that
+  is a real word in the top slot, so तारा, फूल and आमा sit at rank 2 where one
+  keystroke reaches them. Changing that would trade these ten cases for a
+  larger number of words that currently come out right.
 
 `tests/accuracy.rs` holds floors a little under these numbers so a change cannot
 quietly cost more than it buys. They are a ratchet: when the numbers go up, the

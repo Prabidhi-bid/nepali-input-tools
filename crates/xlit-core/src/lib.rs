@@ -41,6 +41,30 @@ pub struct Candidate {
     pub score: i32,
 }
 
+/// Levenshtein distance in characters. Small inputs only — a candidate and the
+/// literal reading of one word — so the straightforward two-row version is more
+/// than fast enough.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    if a.is_empty() {
+        return b.len();
+    }
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut diagonal = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let next = (row[j + 1] + 1)
+                .min(row[j] + 1)
+                .min(diagonal + usize::from(ca != cb));
+            diagonal = row[j + 1];
+            row[j + 1] = next;
+        }
+    }
+    row[b.len()]
+}
+
 /// Helper for [`Ranker`] implementations: insert `text` as a candidate, or — if
 /// an entry with the same text already exists — raise its score and adopt
 /// `source` when `score` is higher than what's there.
@@ -109,10 +133,8 @@ impl Engine {
     ///    which case that word leads and the literal follows it;
     /// 2. anything the user has picked before for this same input;
     /// 3. whichever of the two did not lead;
-    /// 4. words that *extend* the literal — completions and inflected forms —
-    ///    alphabetically;
-    /// 5. everything else — fuzzy corrections and orthographic variants —
-    ///    alphabetically;
+    /// 4. words that *extend* the literal — completions and inflected forms;
+    /// 5. everything else — fuzzy corrections and orthographic variants;
     /// 6. the raw Latin, last.
     ///
     /// The exception in (1) is narrow on purpose. `jindagi` transliterates to
@@ -121,6 +143,9 @@ impl Engine {
     /// misspelling. It does not fire when the literal is itself a word (`kaam`
     /// stays काम) or when nothing resolves exactly (`ne` stays ने), so the
     /// predictability that matters is untouched.
+    ///
+    /// Inside a group, order is by distance from the literal reading and then
+    /// alphabetically — see the comment on the sort.
     ///
     /// The layer scores decide only *whether* a word is offered at all, never
     /// where it lands. Score order let the dictionary put a different word in
@@ -202,17 +227,24 @@ impl Engine {
                 _ => 4,
             }
         };
-        merged.sort_by(|a, b| {
-            group(a)
-                .cmp(&group(b))
-                // Learned entries are the one place the score still orders
-                // anything: it encodes how often the user picked that word.
-                .then_with(|| match group(a) {
-                    1 => b.score.cmp(&a.score),
-                    _ => std::cmp::Ordering::Equal,
-                })
-                .then_with(|| a.text.cmp(&b.text))
-        });
+        // Within a group, the word nearest the literal reading comes first.
+        // The rule engine is never wrong about the *sounds* that were typed, so
+        // among words the typed letters could mean, the one that departs least
+        // from what they literally spell is the best guess: typing `chhori`
+        // reads as छोरि, and छोरी is one character from that while चोरी is two.
+        // Alphabetical order remains the tiebreak, so a word still sits in the
+        // same place every time the same thing is typed — which was the point
+        // of sorting by text rather than by score in the first place.
+        let key = |c: &Candidate| -> (u8, i32, usize, String) {
+            let learned_rank = if group(c) == 1 { -c.score } else { 0 };
+            (
+                group(c),
+                learned_rank,
+                edit_distance(&c.text, &literal),
+                c.text.clone(),
+            )
+        };
+        merged.sort_by_cached_key(key);
         merged
     }
 }
@@ -239,6 +271,34 @@ mod tests {
         assert_eq!(c[0].text, "हेल्लो");
         let texts: Vec<_> = c.iter().map(|x| x.text.as_str()).collect();
         assert!(texts.contains(&"हेलो"), "got {texts:?}");
+    }
+
+    #[test]
+    fn nearest_the_literal_comes_first_within_a_group() {
+        // Two dictionary words, equally confirmed, both plausible readings of
+        // the same input: the one that departs least from what the letters
+        // literally spell leads. Without this the order was alphabetical, and
+        // चोरी (theft) came back ahead of छोरी (daughter) for `chhori`.
+        let e = Engine::nepali().with_ranker(Box::new(TwoWords));
+        let c = e.candidates("chhori");
+        assert_eq!(c[0].text, "छोरी", "got {:?}", c);
+    }
+
+    /// Confirms two words for any input, one near the literal and one not.
+    struct TwoWords;
+
+    impl Ranker for TwoWords {
+        fn rank(&self, _input: &str, mut cands: Vec<Candidate>) -> Vec<Candidate> {
+            merge_candidate(&mut cands, "चोरी".to_string(), 320, Source::Confirmed);
+            merge_candidate(&mut cands, "छोरी".to_string(), 320, Source::Confirmed);
+            cands
+        }
+    }
+
+    #[test]
+    fn edit_distance_counts_characters() {
+        assert_eq!(edit_distance("छोरी", "छोरि"), 1);
+        assert_eq!(edit_distance("", "घर"), 2);
     }
 
     #[test]

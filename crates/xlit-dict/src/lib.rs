@@ -33,7 +33,9 @@ use memmap2::Mmap;
 
 use xlit_core::{merge_candidate, Candidate, Ranker, Source};
 
+mod fold;
 mod words;
+pub use fold::fold_key;
 pub use words::WordList;
 
 const SEED_TSV: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/seed/ne.tsv"));
@@ -365,6 +367,35 @@ impl<D: AsRef<[u8]> + Send + Sync> Ranker for DictRanker<D> {
 
 fn to_io<E: std::fmt::Display>(e: E) -> io::Error {
     io::Error::new(io::ErrorKind::Other, e.to_string())
+}
+
+#[cfg(test)]
+mod fold_tests {
+    use super::fold_key;
+
+    #[test]
+    fn folds_what_a_reader_cannot_distinguish() {
+        // Vowel length, sibilants, b/v/w, the aspirate digraph, case.
+        assert_eq!(fold_key("saathii"), fold_key("saathi"));
+        assert_eq!(fold_key("bhaaShaa"), fold_key("bhasha"));
+        assert_eq!(fold_key("haavaa"), fold_key("hawa"));
+        assert_eq!(fold_key("maanchhe"), fold_key("manche"));
+        assert_eq!(fold_key("DhokaA"), fold_key("dhoka"));
+    }
+
+    #[test]
+    fn leaves_the_inherent_vowel_alone() {
+        // Deleting it on this side merged कहाँ into खाना. The build side
+        // enumerates the choice instead; see `key_variants`.
+        assert_ne!(fold_key("kahaa~"), fold_key("khaanaa"));
+        assert_ne!(fold_key("sarakaar"), fold_key("sarkar"));
+    }
+
+    #[test]
+    fn nasal_marks_read_as_n() {
+        assert_eq!(fold_key("gaau~"), "gaun");
+        assert_eq!(fold_key("raamroM"), fold_key("ramron"));
+    }
 }
 
 #[cfg(test)]

@@ -43,6 +43,7 @@ even when it cannot know the spelling.
       held-out word list ([crates/xlit-eval/README.md](crates/xlit-eval/README.md))
 - [x] Latin-keyed loanwords and proper nouns — `computer`, `kathmandu`, spelled
       the way people type them (`xlit-dict/data/latin-keys-ne.tsv`)
+- [x] Key folding — `sarkar` finds सरकार though the list keys it `sarakaar`
 - [ ] Corpus-derived dictionary seed — every word outside the lists still falls
       back to the literal reading
 - [ ] Packaging: per-distro Linux packages, language packs
@@ -77,8 +78,9 @@ cargo run -p xlit-cli -- --client namaste duniya
 cargo test
 ```
 
-How well does it actually work? 81.1% of a held-out list comes out right on the
-first candidate today, and 100% of the words spelled the schema's own way:
+How well does it actually work? 93.2% of a held-out list comes out right on the
+first candidate today, 99.3% within the visible five, and 100% of the words
+spelled the schema's own way:
 
 ```bash
 cargo run -p xlit-eval
