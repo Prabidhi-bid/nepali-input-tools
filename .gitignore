@@ -27,3 +27,7 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
+
+# Built packages and staging directories.
+packaging/build/
+frontends/linux-fcitx5/build/

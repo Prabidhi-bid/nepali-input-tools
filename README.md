@@ -48,9 +48,25 @@ even when it cannot know the spelling.
       was 263) — `tools/mkseed.py`
 - [ ] Wider vocabulary still: words outside the database fall back to the
       literal reading
-- [ ] Packaging: per-distro Linux packages, language packs
+- [x] Linux packages — `.deb` built and checked; RPM spec and PKGBUILD written
+      against the same Makefile ([packaging/](packaging/README.md))
+- [ ] Language packs (a second language beyond Nepali)
 
 See [docs/architecture.md](docs/architecture.md) for the full plan and milestones.
+
+## Install (Linux)
+
+```bash
+packaging/deb/build.sh && sudo apt install ./packaging/build/*.deb
+```
+
+```bash
+ibus restart
+```
+
+Then add *Nepali (transliteration)* in Settings → Keyboard → Input Sources.
+Fedora, Arch and a plain `sudo make install` are covered in
+[packaging/README.md](packaging/README.md).
 
 ## Build & run
 
@@ -110,6 +126,7 @@ frontends/
   windows-tsf/   Windows text service (xlit_tsf.dll) + installer
   linux-ibus/    IBus engine (GNOME and most distros)
   linux-fcitx5/  Fcitx5 addon (KDE)
+packaging/       .deb builder, RPM spec, PKGBUILD — all driving the Makefile
 docs/            architecture & design notes
 ```
 

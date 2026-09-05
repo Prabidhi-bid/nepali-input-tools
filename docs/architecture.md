@@ -282,8 +282,16 @@ the engine to `commit` for learning.
      `Set-WinUserLanguageList`; uninstall fully reverses (incl. HKLM key
      force-delete + HKCU CTF sweep). Release DLL is stripped, trace behind a
      cargo feature. TODO: native ARM64.
-7. **M7 — packaging**: per-distro Linux packages, language packs. The daemon
-   ships a systemd user unit (`crates/xlit-daemon/dist/`) already.
+7. **M7 — packaging** *(Linux done)*: the top-level `Makefile` owns the install
+   layout — binaries, the IBus component XML with its `<exec>` rewritten to the
+   installed path, the Fcitx5 addon, and the daemon's systemd user unit — and
+   every package format drives those targets with `DESTDIR` rather than keeping
+   its own list of files. Three packages, so that GNOME users are not made to
+   install Fcitx5: `xlit-common` (engine, CLI, daemon), `xlit-ibus`,
+   `xlit-fcitx5`. `packaging/deb/build.sh` builds real `.deb`s with `dpkg-deb`
+   alone; `packaging/rpm/xlit.spec` and `packaging/arch/PKGBUILD` are written
+   against the same targets but are as yet unbuilt — see
+   [packaging/README.md](../packaging/README.md). Language packs remain.
 
 ## Dropped
 

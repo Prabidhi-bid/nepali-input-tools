@@ -1,0 +1,57 @@
+# Arch Linux package. Maintainer: Prabidhi.bid <prdpspkt@gmail.com>
+#
+#   cd packaging/arch && makepkg -si
+#
+# Not built or tested on this machine — the author works on Debian. Treat the
+# first makepkg on an Arch box as the real test.
+#
+# Arch is the reason the Makefile takes LIBEXECDIR: IBus engines live in
+# /usr/lib/ibus here, not /usr/libexec.
+
+pkgbase=xlit
+pkgname=('xlit' 'xlit-ibus' 'xlit-fcitx5')
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Nepali transliteration input method: type namaste, get नमस्ते'
+arch=('x86_64' 'aarch64')
+url='https://github.com/prdpspkt/nepali-input-tools'
+license=('MIT' 'Apache-2.0')
+makedepends=('rust' 'cargo' 'cmake' 'fcitx5' 'pkgconf' 'make')
+source=("$pkgbase-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+_makeargs=(
+    PREFIX=/usr
+    LIBEXECDIR=/usr/lib/ibus
+    FCITX5_LIBDIR=/usr/lib
+)
+
+build() {
+    cd "$srcdir/$pkgbase-$pkgver"
+    make build
+}
+
+check() {
+    cd "$srcdir/$pkgbase-$pkgver"
+    make check
+}
+
+package_xlit() {
+    depends=('gcc-libs')
+    cd "$srcdir/$pkgbase-$pkgver"
+    make install-common DESTDIR="$pkgdir" "${_makeargs[@]}"
+}
+
+package_xlit-ibus() {
+    pkgdesc='Nepali transliteration input method for IBus'
+    depends=("xlit=$pkgver" 'ibus')
+    cd "$srcdir/$pkgbase-$pkgver"
+    make install-ibus DESTDIR="$pkgdir" "${_makeargs[@]}"
+}
+
+package_xlit-fcitx5() {
+    pkgdesc='Nepali transliteration input method for Fcitx5'
+    depends=("xlit=$pkgver" 'fcitx5')
+    cd "$srcdir/$pkgbase-$pkgver"
+    make install-fcitx5 DESTDIR="$pkgdir" "${_makeargs[@]}"
+}
