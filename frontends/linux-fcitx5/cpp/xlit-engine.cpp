@@ -102,6 +102,19 @@ public:
 
         const int handled = xlit_process_key(state, event.key().sym(), modifiersOf(event));
 
+        // A release changes nothing and must not redraw. Fcitx5 delivers press
+        // and release as separate events; letting the release fall through to
+        // updateUI() below drew the candidate list on the press and erased it
+        // on the release, which looked like a flicker on every keystroke. The
+        // release is still claimed when we claimed its press, or the
+        // application sees an unmatched release.
+        if (event.isRelease()) {
+            if (handled != 0) {
+                event.filterAndAccept();
+            }
+            return;
+        }
+
         // Commit first, then redraw: the order the document sees them matters
         // when a key both finishes one word and starts the next.
         const std::string commit = xlit_commit(state);

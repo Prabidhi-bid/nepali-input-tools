@@ -64,6 +64,10 @@ impl XlitState {
     }
 }
 
+/// Fcitx5's release bit, mirrored from [`state::modifier`] so the FFI layer can
+/// recognise a release without reaching into the state machine.
+const RELEASE: u32 = crate::state::modifier::RELEASE;
+
 /// Create an input context. Null on failure.
 #[no_mangle]
 pub extern "C" fn xlit_new() -> *mut XlitState {
@@ -95,7 +99,13 @@ pub unsafe extern "C" fn xlit_process_key(
     let Some(s) = handle.as_mut() else { return 0 };
     let action = s.inner.key(keysym, modifiers);
     let handled = action.handled;
-    s.store(action);
+    // A release produces no output, so storing its empty action would throw
+    // away the preedit and candidates the press just produced — and the caller
+    // would then read an empty commit string over a word it has not committed
+    // yet. Report whether to claim the key and leave the state alone.
+    if modifiers & RELEASE == 0 {
+        s.store(action);
+    }
     i32::from(handled)
 }
 
@@ -163,4 +173,36 @@ pub unsafe extern "C" fn xlit_candidate(handle: *const XlitState, index: usize) 
 #[no_mangle]
 pub unsafe extern "C" fn xlit_cursor(handle: *const XlitState) -> usize {
     handle.as_ref().map_or(0, |s| s.last.cursor)
+}
+
+#[cfg(test)]
+mod ffi_tests {
+    use super::*;
+    use crate::state::{key, modifier};
+
+    /// Press then release, as Fcitx5 actually delivers them. The release must
+    /// leave the candidate list alone: storing its empty action drew the list
+    /// on the press and erased it on the release, one flicker per keystroke.
+    #[test]
+    fn a_release_does_not_wipe_what_the_press_produced() {
+        unsafe {
+            let s = xlit_new();
+            assert!(!s.is_null());
+            for c in "ne".chars() {
+                xlit_process_key(s, c as u32, 0);
+            }
+            let before = xlit_candidate_count(s);
+            assert!(before > 1, "expected candidates, got {before}");
+
+            let handled = xlit_process_key(s, 'e' as u32, modifier::RELEASE);
+            assert_eq!(handled, 1, "a release is claimed while composing");
+            assert_eq!(xlit_candidate_count(s), before);
+            assert!(!xlit_preedit(s).is_null());
+
+            // And a release with nothing in progress is not claimed at all.
+            xlit_reset(s);
+            assert_eq!(xlit_process_key(s, key::SPACE, modifier::RELEASE), 0);
+            xlit_free(s);
+        }
+    }
 }
