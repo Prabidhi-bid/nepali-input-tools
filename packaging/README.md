@@ -95,7 +95,7 @@ On **GNOME**, the desktop owns the list of input sources and re-asserts it, so
 `ibus engine xlit-ne` alone does not stick — the next restart puts you back on
 the keyboard layout you had. Add it as a source instead:
 
-*Settings → Keyboard → Input Sources → + → Nepali → "Nepali (transliteration)"*
+*Settings → Keyboard → Input Sources → + → Nepali → "Nepali (PB-Ne)"*
 
 or, equivalently:
 

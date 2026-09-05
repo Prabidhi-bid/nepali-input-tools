@@ -23,7 +23,7 @@ Needs the Fcitx5 development packages and a C++ compiler:
 | Arch | `sudo pacman -S fcitx5 cmake gcc` |
 
 Then add it in System Settings > Input Method: **+**, search Nepali, pick
-**Nepali (transliteration)**.
+**Nepali (PB-Ne)**.
 
 ## Why there are two halves
 

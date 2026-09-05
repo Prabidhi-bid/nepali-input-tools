@@ -82,6 +82,12 @@ impl XlitEngine {
         Ok(())
     }
 
+    /// Whether candidate number `idx` exists, i.e. whether a number key should
+    /// pick rather than type a digit.
+    fn picks(&self, idx: u32) -> bool {
+        (idx as usize) < self.cands.len()
+    }
+
     /// Write `text` into the document and drop all word state.
     async fn finish(&mut self, ctx: &SignalContext<'_>, text: &str) -> zbus::Result<()> {
         if !text.is_empty() {
@@ -178,14 +184,25 @@ impl XlitEngine {
                 self.render(&ctx).await?;
                 Ok(true)
             }
-            // 1-9 pick a candidate while composing, and are plain digits
-            // otherwise - the number row does double duty, as on Windows.
-            key::ONE..=key::NINE if self.composing() => {
-                let idx = (keyval - key::ONE) as usize;
-                if idx < self.cands.len() {
-                    self.sel = idx;
-                    self.chose = true;
-                    self.commit_word(&ctx, "").await?;
+            // 1-9 pick a candidate while composing - the number row does
+            // double duty, as on Windows.
+            key::ONE..=key::NINE if self.composing() && self.picks(keyval - key::ONE) => {
+                self.sel = (keyval - key::ONE) as usize;
+                self.chose = true;
+                self.commit_word(&ctx, "").await?;
+                Ok(true)
+            }
+            // Otherwise a digit is a digit — in Devanagari, because that is
+            // what typing Nepali means: २५, not 25. Typed mid-word it ends the
+            // word and follows it, the same as any other non-letter.
+            key::ZERO..=key::NINE | key::KP_ZERO..=key::KP_NINE => {
+                let base = if keyval >= key::KP_ZERO { key::KP_ZERO } else { key::ZERO };
+                let digit = char::from_u32('0' as u32 + (keyval - base)).unwrap_or('0');
+                let deva = engine::literal(digit);
+                if self.composing() {
+                    self.commit_word(&ctx, &deva).await?;
+                } else {
+                    self.finish(&ctx, &deva).await?;
                 }
                 Ok(true)
             }

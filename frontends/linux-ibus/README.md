@@ -33,7 +33,7 @@ command connects while the daemon is still starting. And never `sudo ibus`:
 IBus is per-user, root has no session bus, and it can only say `Can't connect
 to IBus`.
 
-Then pick **Nepali (transliteration)** in Settings > Keyboard > Input Sources.
+Then pick **Nepali (PB-Ne)** in Settings > Keyboard > Input Sources.
 On GNOME that step is not optional — the desktop owns the source list and
 re-asserts it, so `ibus engine xlit-ne` on its own is undone by the next
 restart. The command-line equivalent:

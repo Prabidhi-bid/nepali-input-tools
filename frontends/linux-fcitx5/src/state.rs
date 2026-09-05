@@ -25,8 +25,12 @@ pub mod key {
     pub const DOWN: u32 = 0xff54;
     pub const PAGE_UP: u32 = 0xff55;
     pub const PAGE_DOWN: u32 = 0xff56;
+    pub const ZERO: u32 = 0x30;
     pub const ONE: u32 = 0x31;
     pub const NINE: u32 = 0x39;
+    /// The numeric keypad's digits, which type numbers just as the top row does.
+    pub const KP_ZERO: u32 = 0xffb0;
+    pub const KP_NINE: u32 = 0xffb9;
     pub const LOWER_A: u32 = 0x61;
     pub const LOWER_Z: u32 = 0x7a;
     pub const UPPER_A: u32 = 0x41;
@@ -174,16 +178,26 @@ impl State {
                 self.chose = true;
                 self.showing(true)
             }
-            // 1-9 pick a candidate while composing, and are plain digits
-            // otherwise: the number row does double duty.
-            key::ONE..=key::NINE if self.composing() => {
-                let idx = (keysym - key::ONE) as usize;
-                if idx < self.cands.len() {
-                    self.sel = idx;
-                    self.chose = true;
-                    self.commit_word("", true)
+            // 1-9 pick a candidate while composing: the number row does double
+            // duty.
+            key::ONE..=key::NINE
+                if self.composing() && ((keysym - key::ONE) as usize) < self.cands.len() =>
+            {
+                self.sel = (keysym - key::ONE) as usize;
+                self.chose = true;
+                self.commit_word("", true)
+            }
+            // Otherwise a digit is a digit — in Devanagari, because that is what
+            // typing Nepali means: २५, not 25. Typed mid-word it ends the word
+            // and follows it, like any other non-letter.
+            key::ZERO..=key::NINE | key::KP_ZERO..=key::KP_NINE => {
+                let base = if keysym >= key::KP_ZERO { key::KP_ZERO } else { key::ZERO };
+                let digit = char::from_u32('0' as u32 + (keysym - base)).unwrap_or('0');
+                let deva = engine::literal(digit);
+                if self.composing() {
+                    self.commit_word(&deva, true)
                 } else {
-                    self.showing(true)
+                    Action { handled: true, commit: deva, ..Default::default() }
                 }
             }
             key::LOWER_A..=key::LOWER_Z | key::UPPER_A..=key::UPPER_Z => {
@@ -264,9 +278,25 @@ mod tests {
     }
 
     #[test]
-    fn a_digit_is_a_digit_when_not_composing() {
+    fn a_digit_types_a_devanagari_digit() {
         let mut s = State::new();
-        assert!(!s.key(key::ONE, 0).handled);
+        let a = s.key(key::ONE, 0);
+        assert!(a.handled);
+        assert_eq!(a.commit, "१");
+        // And from the keypad, which is where numbers are actually typed.
+        assert_eq!(s.key(key::KP_ZERO, 0).commit, "०");
+    }
+
+    #[test]
+    fn a_digit_that_picks_nothing_commits_the_word_and_then_itself() {
+        // 1-9 pick a candidate while composing, so `0` is the digit to test
+        // with: nothing to pick, so it ends the word and follows it.
+        let mut s = State::new();
+        type_word(&mut s, "ne");
+        let a = s.key(key::ZERO, 0);
+        assert!(a.handled);
+        assert!(a.commit.ends_with('०'), "got {:?}", a.commit);
+        assert!(a.commit.chars().count() > 1, "the word should precede it");
     }
 
     #[test]

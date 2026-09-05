@@ -24,7 +24,11 @@
       <license>MIT OR Apache-2.0</license>
       <author>Prabidhi.bid</author>
       <layout>us</layout>
-      <longname>Nepali (transliteration)</longname>
+      <!-- Shown in the input-source menu. GNOME prints it as
+           "<language name> (<longname>)", and IBus takes the language name
+           from iso-codes, where `ne` is "Nepali (macrolanguage)" — so the
+           shorter this is, the shorter the menu entry. -->
+      <longname>PB-Ne</longname>
       <description>Type Nepali phonetically in Latin: namaste becomes नमस्ते.</description>
       <rank>99</rank>
       <symbol>ने</symbol>

@@ -127,8 +127,12 @@ pub fn owned(v: Value<'static>) -> OwnedValue {
 pub mod key {
     /// The digit and letter rows, as keyvals. IBus passes X11 keysyms, which for
     /// ASCII are the character's own code point.
+    pub const ZERO: u32 = 0x30;
     pub const ONE: u32 = 0x31;
     pub const NINE: u32 = 0x39;
+    /// The numeric keypad's digits, which type numbers just as the top row does.
+    pub const KP_ZERO: u32 = 0xffb0;
+    pub const KP_NINE: u32 = 0xffb9;
     pub const LOWER_A: u32 = 0x61;
     pub const LOWER_Z: u32 = 0x7a;
     pub const UPPER_A: u32 = 0x41;
