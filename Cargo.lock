@@ -1203,6 +1203,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "xlit-eval"
+version = "0.1.0"
+dependencies = [
+ "xlit-core",
+ "xlit-dict",
+]
+
+[[package]]
 name = "xlit-fcitx5"
 version = "0.1.0"
 dependencies = [

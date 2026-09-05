@@ -131,6 +131,28 @@ learning; **+~10 MB** if the LM is enabled.
   is already one process per session. Windows is where the daemon earns its
   keep.
 
+## Accuracy harness (`xlit-eval`) — done
+
+- `data/ne-eval.tsv`: 148 hand-written, held-out `latin → devanagari` pairs.
+  Not generated from the engine and not drawn from the dictionary seed; a set
+  round-tripped through the transliterator would only prove it agrees with
+  itself. Tagged `strict` (spelled the schema's way — the rule engine alone
+  should be exact) vs `casual` (how people really type — only the dictionary can
+  recover it), plus `core` / `inflect` / `loan` / `proper`.
+- Reports top-1, top-5, MRR and CER (character error rate of the top candidate,
+  summed corpus-wide), overall and per tag, and lists the worst failures.
+  `--min-top1` / `--max-cer` make it a gate; `tests/accuracy.rs` holds floors
+  just under the current numbers as a ratchet.
+- Baseline at introduction: **62.8% top-1 / 70.3% top-5 / CER 0.177** overall;
+  **100%** on `strict`, i.e. the rule engine is exact on everything spelled its
+  own way. The hole is loanwords (25%) and proper nouns (32%), where the
+  letter-by-letter reading of English orthography — चोम्पुतेर for `computer`,
+  कथ्मन्दु for `kathmandu` — is never going to be repaired by ranking because
+  the right answer is not generated at all. That is a dictionary-coverage
+  problem, and the corpus-derived seed still open under M2 is its fix. Core
+  vocabulary at 75% mostly misses by one character with the right word at rank
+  2, which is a cheaper, ranking-side problem.
+
 ## Frontends
 
 | OS | Framework | Crate / language | Notes |
@@ -149,8 +171,9 @@ the engine to `commit` for learning.
 1. **M1 — engine core** *(done)*: rule engine, Nepali schema, CLI, tests.
 2. **M2 — dictionary + learning** *(done)*: `xlit-dict` FST layer,
    `xlit-learn` JSON store, wired into the CLI (numbers commit picks).
-   *Still open:* corpus-derived seed list, accuracy harness (top-1 / top-5 / CER
-   against a held-out word list).
+   *Still open:* corpus-derived seed list — the accuracy harness (`xlit-eval`,
+   below) now says what it would buy: loanwords and proper nouns are where the
+   engine loses.
 3. **M3 — daemon** *(done)*: `xlit-daemon` + `xlit-ipc`, `xlit --client`.
 4. **M4 — Linux IBus** *(done)*: end-to-end typing in real apps on Linux.
 5. **M5 — Fcitx5** *(done)*.

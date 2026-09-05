@@ -1,0 +1,19 @@
+[package]
+name = "xlit-eval"
+version = "0.1.0"
+description = "Accuracy harness: top-1 / top-5 / MRR / CER against a held-out word list."
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "xlit_eval"
+path = "src/lib.rs"
+
+[[bin]]
+name = "xlit-eval"
+path = "src/main.rs"
+
+[dependencies]
+xlit-core = { path = "../xlit-core" }
+xlit-dict = { path = "../xlit-dict" }

@@ -7,6 +7,7 @@ members = [
     "crates/xlit-ipc",
     "crates/xlit-daemon",
     "crates/xlit-cli",
+    "crates/xlit-eval",
     "crates/xlit-config",
     "crates/xlit-install",
     "frontends/windows-tsf",
@@ -27,6 +28,7 @@ default-members = [
     "crates/xlit-ipc",
     "crates/xlit-daemon",
     "crates/xlit-cli",
+    "crates/xlit-eval",
     "frontends/linux-ibus",
     "frontends/linux-fcitx5",
 ]

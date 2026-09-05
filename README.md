@@ -39,6 +39,10 @@ even when it cannot know the spelling.
 - [~] Windows TSF frontend (`xlit-tsf`) — types Nepali in real apps with a
       candidate window and an installer; ARM64 and the language-bar icon remain
       (see [frontends/windows-tsf/README.md](frontends/windows-tsf/README.md))
+- [x] Accuracy harness (`xlit-eval`) — top-1 / top-5 / MRR / CER against a
+      held-out word list ([crates/xlit-eval/README.md](crates/xlit-eval/README.md))
+- [ ] Corpus-derived dictionary seed — loanwords and proper nouns are where the
+      numbers say the engine loses
 - [ ] Packaging: per-distro Linux packages, language packs
 
 See [docs/architecture.md](docs/architecture.md) for the full plan and milestones.
@@ -71,6 +75,13 @@ cargo run -p xlit-cli -- --client namaste duniya
 cargo test
 ```
 
+How well does it actually work? 62.8% of a held-out list comes out right on the
+first candidate today, and 100% of the words spelled the schema's own way:
+
+```bash
+cargo run -p xlit-eval
+```
+
 ## Layout
 
 ```
@@ -81,9 +92,17 @@ crates/
     seed/        ne.tsv — small built-in word list
     src/bin/     build.rs — TSV -> .fst compiler
   xlit-learn/    learning Ranker: remembers (input -> chosen), JSON-backed
-  xlit-cli/      dev REPL / one-shot tester
+  xlit-ipc/      protocol + transport between frontends and the daemon
+  xlit-daemon/   one engine process per user; frontends are thin clients
+  xlit-cli/      dev REPL / one-shot tester (--client talks to the daemon)
+  xlit-eval/     accuracy harness: top-1 / top-5 / MRR / CER
+    data/        ne-eval.tsv — held-out word list
+  xlit-config/   word editor (Windows)
+  xlit-install/  self-contained Windows installer
 frontends/
   windows-tsf/   Windows text service (xlit_tsf.dll) + installer
+  linux-ibus/    IBus engine (GNOME and most distros)
+  linux-fcitx5/  Fcitx5 addon (KDE)
 docs/            architecture & design notes
 ```
 

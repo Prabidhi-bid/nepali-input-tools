@@ -1,0 +1,175 @@
+# Held-out evaluation set: latin <TAB> expected Devanagari <TAB> tags
+#
+# Hand-written, never generated from the engine or from `xlit-dict`'s seed —
+# a set produced by round-tripping the transliterator would only prove the
+# transliterator agrees with itself. Each row is what a person would type and
+# the spelling they meant.
+#
+# Tags are comma-separated; the harness reports a score per tag.
+#   casual  — typed the way people actually type: no capitals for retroflexes,
+#             no doubled vowels for length. Recovering the spelling from this is
+#             the dictionary layer's whole job.
+#   strict  — spelled out in the schema's ITRANS conventions, which the rule
+#             engine alone should get right.
+#   core / loan / proper / inflect — vocabulary group.
+
+# ---- core vocabulary, typed casually ----------------------------------------
+namaste	नमस्ते	casual,core
+dhanyabaad	धन्यवाद	casual,core
+ghar	घर	casual,core
+paani	पानी	casual,core
+khana	खाना	casual,core
+manche	मान्छे	casual,core
+saathi	साथी	casual,core
+kitab	किताब	casual,core
+bihana	बिहान	casual,core
+raat	रात	casual,core
+din	दिन	casual,core
+mahina	महिना	casual,core
+aama	आमा	casual,core
+buwa	बुवा	casual,core
+didi	दिदी	casual,core
+bhai	भाइ	casual,core
+chhori	छोरी	casual,core
+chhora	छोरा	casual,core
+naam	नाम	casual,core
+kaam	काम	casual,core
+maya	माया	casual,core
+desh	देश	casual,core
+bhasa	भाषा	casual,core
+sabda	शब्द	casual,core
+ramro	राम्रो	casual,core
+naramro	नराम्रो	casual,core
+thulo	ठूलो	casual,core
+sano	सानो	casual,core
+naya	नयाँ	casual,core
+purano	पुरानो	casual,core
+rato	रातो	casual,core
+seto	सेतो	casual,core
+kalo	कालो	casual,core
+bihe	बिहे	casual,core
+manis	मानिस	casual,core
+sarkar	सरकार	casual,core
+sahar	सहर	casual,core
+gaun	गाउँ	casual,core
+bato	बाटो	casual,core
+dhoka	ढोका	casual,core
+jhyal	झ्याल	casual,core
+kotha	कोठा	casual,core
+bhat	भात	casual,core
+dudh	दूध	casual,core
+chiya	चिया	casual,core
+mitho	मीठो	casual,core
+nun	नुन	casual,core
+tarkari	तरकारी	casual,core
+kapada	कपडा	casual,core
+jutta	जुत्ता	casual,core
+paisa	पैसा	casual,core
+samay	समय	casual,core
+mausam	मौसम	casual,core
+pahad	पहाड	casual,core
+himal	हिमाल	casual,core
+nadi	नदी	casual,core
+phul	फूल	casual,core
+rukh	रुख	casual,core
+chara	चरा	casual,core
+kukur	कुकुर	casual,core
+biralo	बिरालो	casual,core
+gai	गाई	casual,core
+sun	सुन	casual,core
+tara	तारा	casual,core
+akash	आकाश	casual,core
+dharti	धरती	casual,core
+hawa	हावा	casual,core
+aago	आगो	casual,core
+sundar	सुन्दर	casual,core
+pustak	पुस्तक	casual,core
+gyan	ज्ञान	casual,core
+kshama	क्षमा	casual,core
+sikshya	शिक्षा	casual,core
+bidyalaya	विद्यालय	casual,core
+
+# ---- inflected forms and postpositions --------------------------------------
+gharma	घरमा	casual,inflect
+gharbata	घरबाट	casual,inflect
+manchele	मान्छेले	casual,inflect
+saathilai	साथीलाई	casual,inflect
+nepalko	नेपालको	casual,inflect
+nepalma	नेपालमा	casual,inflect
+kitabharu	किताबहरू	casual,inflect
+saathiharu	साथीहरू	casual,inflect
+garchha	गर्छ	casual,inflect
+gareko	गरेको	casual,inflect
+garne	गर्ने	casual,inflect
+khane	खाने	casual,inflect
+janchhu	जान्छु	casual,inflect
+khanchhu	खान्छु	casual,inflect
+aayo	आयो	casual,inflect
+gayo	गयो	casual,inflect
+bhayo	भयो	casual,inflect
+thiyo	थियो	casual,inflect
+huncha	हुन्छ	casual,inflect
+padhne	पढ्ने	casual,inflect
+lekhne	लेख्ने	casual,inflect
+
+# ---- English loanwords -------------------------------------------------------
+# The rule engine transliterates letter by letter and cannot know that "hello"
+# is written हेलो and not हेल्लो; only the dictionary can.
+hello	हेलो	casual,loan
+bus	बस	casual,loan
+school	स्कुल	casual,loan
+doctor	डाक्टर	casual,loan
+computer	कम्प्युटर	casual,loan
+mobile	मोबाइल	casual,loan
+office	अफिस	casual,loan
+internet	इन्टरनेट	casual,loan
+photo	फोटो	casual,loan
+college	कलेज	casual,loan
+ticket	टिकट	casual,loan
+police	पुलिस	casual,loan
+film	फिल्म	casual,loan
+pen	पेन	casual,loan
+phone	फोन	casual,loan
+gadi	गाडी	casual,loan
+
+# ---- proper nouns ------------------------------------------------------------
+nepal	नेपाल	casual,proper
+kathmandu	काठमाडौं	casual,proper
+pokhara	पोखरा	casual,proper
+biratnagar	विराटनगर	casual,proper
+birgunj	वीरगञ्ज	casual,proper
+lalitpur	ललितपुर	casual,proper
+bhaktapur	भक्तपुर	casual,proper
+dharan	धरान	casual,proper
+butwal	बुटवल	casual,proper
+janakpur	जनकपुर	casual,proper
+nepalgunj	नेपालगञ्ज	casual,proper
+chitwan	चितवन	casual,proper
+sagarmatha	सगरमाथा	casual,proper
+bagmati	बागमती	casual,proper
+gandaki	गण्डकी	casual,proper
+bharat	भारत	casual,proper
+america	अमेरिका	casual,proper
+buddha	बुद्ध	casual,proper
+lumbini	लुम्बिनी	casual,proper
+pashupati	पशुपति	casual,proper
+
+# ---- the same language spelled in the schema's own conventions ---------------
+# No dictionary needed: if these are wrong, the rule engine is wrong.
+kaaThamaaDauM	काठमाडौं	strict,proper
+nepaalii	नेपाली	strict,core
+dhanyavaad	धन्यवाद	strict,core
+paanii	पानी	strict,core
+saathii	साथी	strict,core
+maanchhe	मान्छे	strict,core
+raamro	राम्रो	strict,core
+Thuulo	ठूलो	strict,core
+kitaab	किताब	strict,core
+gharamaa	घरमा	strict,inflect
+bhaaShaa	भाषा	strict,core
+aakaash	आकाश	strict,core
+suurya	सूर्य	strict,core
+prithvii	पृथ्वी	strict,proper
+GYaan	ज्ञान	strict,core
+kShamaa	क्षमा	strict,core
+vidyaalaya	विद्यालय	strict,core
