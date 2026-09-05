@@ -20,6 +20,7 @@ fn main() {
     let mut tag: Option<String> = None;
     let mut min_top1: Option<f64> = None;
     let mut max_cer: Option<f64> = None;
+    let mut repeat = 1usize;
 
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -33,6 +34,9 @@ fn main() {
                 failures = value("--failures").parse().unwrap_or_else(|_| fail("--failures needs a number"))
             }
             "--tag" | "-t" => tag = Some(value("--tag")),
+            "--repeat" | "-r" => {
+                repeat = value("--repeat").parse().unwrap_or_else(|_| fail("--repeat needs a number"))
+            }
             "--min-top1" => {
                 min_top1 = Some(value("--min-top1").parse().unwrap_or_else(|_| fail("--min-top1 needs a fraction")))
             }
@@ -69,9 +73,16 @@ fn main() {
         .with_ranker(Box::new(DictRanker::builtin()))
         .with_ranker(Box::new(WordList::new()));
 
-    let outcomes = run(&cases, |input| {
-        engine.candidates(input).into_iter().map(|c| c.text).collect()
-    });
+    // A lookup happens on every keystroke, so its cost is worth a number beside
+    // the accuracy: `--repeat` runs the set enough times to time it honestly.
+    let started = std::time::Instant::now();
+    let mut outcomes = Vec::new();
+    for _ in 0..repeat.max(1) {
+        outcomes = run(&cases, |input| {
+            engine.candidates(input).into_iter().map(|c| c.text).collect()
+        });
+    }
+    let per_lookup = started.elapsed() / (cases.len() * repeat.max(1)) as u32;
     let (overall, by_tag) = summarize(&outcomes);
 
     println!(
@@ -80,6 +91,7 @@ fn main() {
         path.as_deref().unwrap_or("the built-in set")
     );
     print_table(&overall, &by_tag);
+    println!("\n{:.3} ms per lookup", per_lookup.as_secs_f64() * 1000.0);
     if failures > 0 {
         print_failures(&outcomes, failures);
     }
@@ -115,6 +127,7 @@ xlit-eval — transliteration accuracy against a held-out word list
   --set PATH        evaluate this TSV (latin<TAB>devanagari<TAB>tags)
   --tag TAG         only rows carrying TAG (casual, strict, loan, ...)
   --failures N      list the N worst cases (default 10; 0 for none)
+  --repeat N        run the set N times, for a steadier per-lookup timing
   --min-top1 F      exit 1 if top-1 accuracy is below F (0..1)
   --max-cer F       exit 1 if the character error rate is above F";
 

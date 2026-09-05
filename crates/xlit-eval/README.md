@@ -18,6 +18,7 @@ cargo run -p xlit-eval -- --tag loan --failures 20
 | `--set PATH` | evaluate your own TSV instead of the built-in set |
 | `--tag TAG` | only rows carrying `TAG` |
 | `--failures N` | list the N worst cases (default 10, `0` for none) |
+| `--repeat N` | run the set N times, for a steadier per-lookup timing |
 | `--min-top1 F` | exit 1 if top-1 accuracy is below `F` |
 | `--max-cer F` | exit 1 if the character error rate is above `F` |
 
@@ -32,6 +33,10 @@ cargo run -p xlit-eval -- --tag loan --failures 20
   summed over the corpus rather than averaged per word. A first candidate one
   matra out (`नेपालि` for `नेपाली`) is a different failure from a first
   candidate that is a different word, and only CER tells them apart.
+
+It also times a lookup. That number belongs next to the accuracy: a lookup
+happens on every keystroke, so a change that buys a point of top-1 by scanning
+the dictionary twice more is not obviously a good trade.
 
 Runs have no learning store attached, so the number is a property of the engine
 and not of whichever machine ran it.
@@ -67,6 +72,11 @@ loan           16   100.0%   100.0%   1.000   0.000      25.0% / 31.2% / 0.553
 proper         22   100.0%   100.0%   1.000   0.000      31.8% / 36.4% / 0.281
 strict         17   100.0%   100.0%   1.000   0.000      unchanged
 ```
+
+A lookup costs **3.1 ms** (`--repeat 20`, release). Most of that is the fuzzy
+pass, which is why it only scans words whose first character could be confused
+with the first character of what was typed: without that filter the same lookup
+takes 32 ms against the 8,700-word seed.
 
 Three changes got it there: Latin keys for loanwords and place names, folding
 those keys to the shape a typist produces, and ordering equally-confirmed words

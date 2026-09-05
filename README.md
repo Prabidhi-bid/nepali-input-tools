@@ -44,8 +44,10 @@ even when it cannot know the spelling.
 - [x] Latin-keyed loanwords and proper nouns — `computer`, `kathmandu`, spelled
       the way people type them (`xlit-dict/data/latin-keys-ne.tsv`)
 - [x] Key folding — `sarkar` finds सरकार though the list keys it `sarakaar`
-- [ ] Corpus-derived dictionary seed — every word outside the lists still falls
-      back to the literal reading
+- [x] Dictionary seed built from the project's own word database (8,584 words,
+      was 263) — `tools/mkseed.py`
+- [ ] Wider vocabulary still: words outside the database fall back to the
+      literal reading
 - [ ] Packaging: per-distro Linux packages, language packs
 
 See [docs/architecture.md](docs/architecture.md) for the full plan and milestones.
@@ -93,7 +95,7 @@ crates/
   xlit-core/     engine: rule pipeline, schema loader, Ranker trait, merge_candidate
     schemas/     one .toml per language (ne.toml = Nepali)
   xlit-dict/     dictionary Ranker: FST of word->freq; exact/fuzzy/prefix
-    seed/        ne.tsv — small built-in word list
+    seed/        ne.tsv (generated from the word database) + curated-ne.tsv
     data/        ne-words.tsv (generated) + latin-keys-ne.tsv (hand-written)
     src/bin/     build.rs — TSV -> .fst compiler
   xlit-learn/    learning Ranker: remembers (input -> chosen), JSON-backed

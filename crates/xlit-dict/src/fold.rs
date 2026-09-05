@@ -37,7 +37,6 @@
 // offered as a candidate and scored below an exact key match; which one leads
 // is then decided by the engine, and by how far each sits from the literal
 // reading of what was typed.
-#[allow(dead_code)] // `key_variants` is the build script's half of this file.
 /// Fold a Latin key (or a Latin input) to its canonical shape.
 pub fn fold_key(s: &str) -> String {
     // Nasal marks and visarga first, while case still distinguishes them from
@@ -109,6 +108,7 @@ pub fn fold_key(s: &str) -> String {
 /// doing the same deletions to the query, where they would merge words that are
 /// nothing like each other: `kahaa~` and `khaanaa` both reduce to `khan`, and
 /// typing `khana` then offered कहाँ ahead of खाना.
+#[allow(dead_code)] // build.rs half of this file; unused inside the crate.
 pub fn key_variants(s: &str) -> Vec<String> {
     let base = fold_key(s);
     if base.is_empty() {
@@ -142,6 +142,7 @@ pub fn key_variants(s: &str) -> Vec<String> {
 /// Capped at [`MAX_INHERENT`] positions: beyond that only the all-kept and
 /// all-dropped forms are produced, because 2^n entries for a long compound is a
 /// lot of set for a spelling nobody uses.
+#[allow(dead_code)] // build.rs half of this file; unused inside the crate.
 fn inherent_vowel_choices(s: &str) -> Vec<String> {
     let chars: Vec<char> = s.chars().collect();
     let positions: Vec<usize> = (1..chars.len().saturating_sub(1))
@@ -183,8 +184,10 @@ fn inherent_vowel_choices(s: &str) -> Vec<String> {
 
 /// Enumerating 2^n spellings is fine for the three or four inherent vowels a
 /// real word has and pointless past that.
+#[allow(dead_code)] // build.rs half of this file; unused inside the crate.
 const MAX_INHERENT: usize = 4;
 
+#[allow(dead_code)] // build.rs half of this file; unused inside the crate.
 fn is_consonant(c: char) -> bool {
     c.is_ascii_alphabetic() && !matches!(c, 'a' | 'e' | 'i' | 'o' | 'u')
 }

@@ -79,9 +79,27 @@ learning; **+~10 MB** if the LM is enabled.
 ## Dictionary layer (`xlit-dict`) — done
 
 - Structure: `fst::Map<Devanagari word → u64 freq>` (BurntSushi `fst`).
-  `DictRanker::builtin()` builds it in memory from the compiled-in seed
-  (`seed/ne.tsv`); `DictRanker::open(path)` memory-maps a large prebuilt `.fst`
-  (`src/bin/build.rs` compiles a TSV → `.fst`).
+  `DictRanker::builtin()` hands back the set `build.rs` compiled into the binary
+  from `seed/ne.tsv`; `DictRanker::open(path)` memory-maps a prebuilt `.fst`
+  (`src/bin/mkdict.rs` compiles a TSV → `.fst`).
+- **The seed is the project's own word database** (`tools/mkseed.py`,
+  `data/ne-words.sqlite3` → `seed/ne.tsv`): 8,584 words, plus 246 hand-curated
+  entries in `seed/curated-ne.tsv` which is the file to edit. It used to be 263
+  hand-written words, which was the real reason this layer looked weak — the
+  Latin-keyed `WordList` has had the whole lexicon for a while, while the layer
+  that *validates* a spelling, corrects a one-character slip and offers
+  completions had seen almost none of it. Thirteen database words are skipped on
+  the way in: they spell a conjunct with the Hindi anusvara (अंग्रेजी for
+  अङ्ग्रेजी), which is precisely what the engine's nasal-conjunct variant exists
+  to convert away from, and confirming them as words would keep them on top.
+- The database has no frequencies, so the second column is an honest proxy —
+  roots above the forms generated from them, shorter above longer. It feeds
+  `freq_bonus`, which decides which three fuzzy hits survive the cap; it does
+  not decide where a candidate lands.
+- Compiled at build time rather than parsed at startup, for the same reason as
+  the word list: the text service is loaded into every process that takes input,
+  and none of them should pay to parse 8,700 lines and build an FST. Startup
+  cost is now zero and the bytes page in as they are touched.
 - Per input, three passes run against **every** literal candidate the rule engine
   produced — the primary transliteration and any variant (e.g. the de-geminated
   loanword form), so a variant can only win with dictionary backing:
@@ -90,6 +108,13 @@ learning; **+~10 MB** if the LM is enabled.
      the same character length, i.e. a substitution: vowel length `ि`/`ी`,
      anusvara, sibilant). This is what turns `नेपालि` → `नेपाली`.
   3. **prefix** — `Str(word).starts_with()` → up to 3 completions at ~90 + bonus/2.
+- The fuzzy pass only scans words whose **first character could be confused with
+  the first character of what was typed** — with one edit allowed and
+  substitutions restricted to confusable pairs, a different opening character
+  means a different word. That is what made an 8,700-word seed affordable: the
+  scan covers three prefixes rather than the whole map, and `xlit-eval --repeat`
+  puts a lookup at **3.1 ms against 32 ms** without it. The BK-tree the old note
+  here reached for is still unnecessary.
 - All results funnel through `xlit_core::merge_candidate` (dedupe, keep max score).
 - The seed (`seed/ne.tsv`) has three groups: core vocabulary, common English
   loanwords (हेलो, बस, स्कुल, डाक्टर, …), and proper nouns — places, countries,

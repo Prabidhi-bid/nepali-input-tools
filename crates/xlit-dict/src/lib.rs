@@ -38,7 +38,8 @@ mod words;
 pub use fold::fold_key;
 pub use words::WordList;
 
-const SEED_TSV: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/seed/ne.tsv"));
+/// The seed compiled by `build.rs`: Devanagari word → corpus frequency.
+static SEED_FST: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ne-seed.fst"));
 
 /// Nepali postpositions and case markers, most frequent first.
 ///
@@ -78,12 +79,22 @@ pub struct DictRanker<D> {
     opts: DictOpts,
 }
 
-impl DictRanker<Vec<u8>> {
-    /// Build from the compiled-in Nepali seed list (small, in-memory).
+impl DictRanker<&'static [u8]> {
+    /// The compiled-in Nepali seed: 40,000 words counted off Nepali Wikipedia
+    /// plus the curated list (`seed/`, built by `tools/mkseed.py`).
+    ///
+    /// Free to construct — the FST is already built, sitting in the binary — so
+    /// a text service loaded into every process pays nothing but the pages it
+    /// actually touches.
     pub fn builtin() -> Self {
-        Self::from_tsv(SEED_TSV).expect("seed tsv must be valid")
+        DictRanker {
+            map: Map::new(SEED_FST).expect("compiled-in seed fst must be valid"),
+            opts: DictOpts::default(),
+        }
     }
+}
 
+impl DictRanker<Vec<u8>> {
     /// Build an in-memory FST from `word<TAB>freq` lines (`#` comments allowed).
     pub fn from_tsv(text: &str) -> io::Result<Self> {
         let mut sorted: BTreeMap<String, u64> = BTreeMap::new();
@@ -182,6 +193,40 @@ fn takes_postpositions(word: &str) -> bool {
 fn freq_bonus(freq: u64) -> i32 {
     (((freq.max(1) as f64).ln() * 5.0) as i32).clamp(0, 80)
 }
+
+/// Opening characters a fuzzy hit may have, given the word being looked up.
+///
+/// The first character itself, everything [`confusable`] with it, and — because
+/// a leading nasal mark may be dropped — the second character too, when the
+/// first is one of those. Empty input yields nothing to search.
+fn first_char_candidates(word: &[char]) -> Vec<String> {
+    let Some(&first) = word.first() else {
+        return Vec::new();
+    };
+    let mut out: Vec<String> = Vec::with_capacity(4);
+    let mut push = |c: char| {
+        let s = c.to_string();
+        if !out.contains(&s) {
+            out.push(s);
+        }
+    };
+    for c in ALL_CONFUSABLE.chars() {
+        if confusable(first, c) {
+            push(c);
+        }
+    }
+    push(first);
+    if is_weak_mark(first) {
+        if let Some(&second) = word.get(1) {
+            push(second);
+        }
+    }
+    out
+}
+
+/// Every character that appears in a [`confusable`] class, so the classes can be
+/// enumerated without exposing their table.
+const ALL_CONFUSABLE: &str = "\u{093F}\u{0940}\u{0941}\u{0942}\u{0947}\u{0948}\u{094B}\u{094C}\u{0907}\u{0908}\u{0909}\u{090A}\u{090F}\u{0910}\u{0913}\u{0914}\u{0905}\u{0906}\u{0938}\u{0936}\u{0937}\u{092C}\u{0935}\u{0924}\u{091F}\u{0925}\u{0920}\u{0926}\u{0921}\u{0927}\u{0922}\u{0928}\u{0923}\u{0901}\u{0902}";
 
 /// Characters a reader would accept as the same word.
 ///
@@ -312,18 +357,30 @@ impl<D: AsRef<[u8]> + Send + Sync> Ranker for DictRanker<D> {
                 let q: Vec<char> = word.chars().collect();
                 let maxd = self.opts.max_edit_distance as usize;
                 let mut hits: Vec<(String, u64)> = Vec::new();
-                let mut stream = self.map.stream();
-                while let Some((k, v)) = stream.next() {
-                    let Ok(s) = std::str::from_utf8(k) else { continue };
-                    if s == word {
-                        continue;
-                    }
-                    let sc: Vec<char> = s.chars().collect();
-                    if sc.len().abs_diff(q.len()) > maxd {
-                        continue;
-                    }
-                    if bounded_levenshtein(&q, &sc, maxd).is_some() {
-                        hits.push((s.to_string(), v));
+                // Only words starting with a character the first one could be
+                // confused with can be within the budget: with one edit allowed
+                // and substitutions restricted to confusable pairs, a different
+                // opening character means a different word. Scanning those few
+                // prefixes instead of the whole map is what keeps this cheap now
+                // that the seed is 40,000 words rather than a few hundred — the
+                // alternative was a BK-tree, which this makes unnecessary.
+                for first in first_char_candidates(&q) {
+                    let mut stream = self
+                        .map
+                        .search(Str::new(first.as_str()).starts_with())
+                        .into_stream();
+                    while let Some((k, v)) = stream.next() {
+                        let Ok(s) = std::str::from_utf8(k) else { continue };
+                        if s == word {
+                            continue;
+                        }
+                        let sc: Vec<char> = s.chars().collect();
+                        if sc.len().abs_diff(q.len()) > maxd {
+                            continue;
+                        }
+                        if bounded_levenshtein(&q, &sc, maxd).is_some() {
+                            hits.push((s.to_string(), v));
+                        }
                     }
                 }
                 hits.sort_by(|a, b| b.1.cmp(&a.1));
@@ -437,6 +494,26 @@ mod tests {
         let top = &engine().candidates("nepaal")[0];
         assert_eq!(top.text, "नेपाल");
         assert_eq!(top.source, Source::Confirmed);
+    }
+
+    #[test]
+    fn the_seed_is_the_whole_lexicon() {
+        // It was 263 hand-written words, which is why this layer could not
+        // confirm ordinary vocabulary. A regenerated seed that comes back small
+        // means tools/mkseed.py read the wrong thing.
+        let d = DictRanker::builtin();
+        assert!(d.len() > 8000, "seed has only {} words", d.len());
+    }
+
+    #[test]
+    fn hindi_anusvara_spellings_stay_out_of_the_seed() {
+        // The database carries अंग्रेजी; Nepali writes अङ्ग्रेजी, and the rule
+        // engine's nasal-conjunct variant exists to convert the one into the
+        // other. Seeding the Hindi form would confirm it as a word and hand it
+        // back the top slot.
+        let d = DictRanker::builtin();
+        assert!(d.map.get("अंग्रेजी".as_bytes()).is_none());
+        assert!(d.map.get("अङ्ग्रेजी".as_bytes()).is_some());
     }
 
     #[test]

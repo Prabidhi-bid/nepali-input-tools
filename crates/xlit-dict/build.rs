@@ -27,7 +27,10 @@ use std::path::PathBuf;
 include!("src/fold.rs");
 
 fn main() {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data");
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    build_seed(&manifest.join("seed/ne.tsv"));
+
+    let dir = manifest.join("data");
     let sources = [dir.join("ne-words.tsv"), dir.join("latin-keys-ne.tsv")];
     for src in &sources {
         println!("cargo:rerun-if-changed={}", src.display());
@@ -88,6 +91,49 @@ fn main() {
         entries.len(),
         folded.len()
     );
+}
+
+/// Compile the Devanagari-keyed seed (`word<TAB>frequency`) into an `fst::Map`.
+///
+/// Done here rather than in `DictRanker::builtin()` because the seed is now a
+/// corpus-derived 40,000 words rather than a couple of hundred: parsing that at
+/// startup would cost every process that loads the text service a BTreeMap of
+/// 40,000 heap strings and the FST construction on top. Compiled, it is a
+/// `&'static [u8]` the OS pages in as it is touched.
+fn build_seed(src: &PathBuf) {
+    println!("cargo:rerun-if-changed={}", src.display());
+    let file = std::fs::File::open(src)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", src.display()));
+
+    // BTreeMap because `fst` demands sorted keys, and because a word may appear
+    // twice once the curated list is merged in — the higher frequency wins.
+    let mut words: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+    for (n, line) in BufReader::new(file).lines().enumerate() {
+        let line = line.expect("read line");
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((word, freq)) = line.split_once('\t') else {
+            panic!("{}:{}: expected `word<TAB>frequency`", src.display(), n + 1);
+        };
+        let freq: u64 = freq.trim().parse().unwrap_or_else(|_| {
+            panic!("{}:{}: frequency is not a number", src.display(), n + 1)
+        });
+        let slot = words.entry(word.trim().to_string()).or_insert(0);
+        *slot = (*slot).max(freq);
+    }
+
+    let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR")).join("ne-seed.fst");
+    let mut b = fst::MapBuilder::new(BufWriter::new(
+        std::fs::File::create(&out).expect("create seed fst"),
+    ))
+    .expect("fst map builder");
+    for (word, freq) in &words {
+        b.insert(word, *freq).expect("insert");
+    }
+    b.finish().expect("finish seed fst");
+    println!("cargo:warning=ne-seed.fst: {} words", words.len());
 }
 
 fn write_fst(path: &PathBuf, entries: &[String]) {
