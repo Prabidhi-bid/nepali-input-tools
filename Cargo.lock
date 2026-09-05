@@ -1157,7 +1157,7 @@ dependencies = [
 
 [[package]]
 name = "xlit-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "xlit-core",
  "xlit-dict",
@@ -1167,7 +1167,7 @@ dependencies = [
 
 [[package]]
 name = "xlit-config"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "windows",
  "xlit-core",
@@ -1177,7 +1177,7 @@ dependencies = [
 
 [[package]]
 name = "xlit-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "toml",
@@ -1185,7 +1185,7 @@ dependencies = [
 
 [[package]]
 name = "xlit-daemon"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "xlit-core",
  "xlit-dict",
@@ -1195,7 +1195,7 @@ dependencies = [
 
 [[package]]
 name = "xlit-dict"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "fst",
  "memmap2",
@@ -1204,7 +1204,7 @@ dependencies = [
 
 [[package]]
 name = "xlit-eval"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "xlit-core",
  "xlit-dict",
@@ -1212,7 +1212,7 @@ dependencies = [
 
 [[package]]
 name = "xlit-fcitx5"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "xlit-core",
  "xlit-dict",
@@ -1221,7 +1221,7 @@ dependencies = [
 
 [[package]]
 name = "xlit-ibus"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "tokio",
  "xlit-core",
@@ -1233,7 +1233,7 @@ dependencies = [
 
 [[package]]
 name = "xlit-install"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "windows",
  "winreg",
@@ -1241,7 +1241,7 @@ dependencies = [
 
 [[package]]
 name = "xlit-ipc"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1250,7 +1250,7 @@ dependencies = [
 
 [[package]]
 name = "xlit-learn"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1259,7 +1259,7 @@ dependencies = [
 
 [[package]]
 name = "xlit-tsf"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "windows",
  "windows-core",

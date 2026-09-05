@@ -1,6 +1,6 @@
 [package]
 name = "xlit-eval"
-version = "0.1.0"
+version = "0.1.1"
 description = "Accuracy harness: top-1 / top-5 / MRR / CER against a held-out word list."
 edition.workspace = true
 license.workspace = true

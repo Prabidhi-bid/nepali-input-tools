@@ -17,7 +17,7 @@
     install has it).
 
 .PARAMETER Version
-    Version stamped into the installer (default 0.1.0).
+    Version stamped into the installer (default 0.1.1).
 
 .PARAMETER Configuration
     release (default) or debug.
@@ -36,7 +36,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Version = '0.1.0',
+    [string]$Version = '0.1.1',
     [ValidateSet('release', 'debug')][string]$Configuration = 'release',
     [switch]$SkipX86,
     [string]$Password,

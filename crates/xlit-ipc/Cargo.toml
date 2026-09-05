@@ -1,6 +1,6 @@
 [package]
 name = "xlit-ipc"
-version = "0.1.0"
+version = "0.1.1"
 description = "Length-prefixed JSON protocol and transport between xlit frontends and the daemon."
 edition.workspace = true
 license.workspace = true

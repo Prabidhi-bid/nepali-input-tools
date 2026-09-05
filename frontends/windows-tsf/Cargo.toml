@@ -1,6 +1,6 @@
 [package]
 name = "xlit-tsf"
-version = "0.1.0"
+version = "0.1.1"
 description = "Windows TSF text input processor for the xlit transliteration engine."
 edition.workspace = true
 license.workspace = true

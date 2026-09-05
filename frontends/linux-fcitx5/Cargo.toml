@@ -1,6 +1,6 @@
 [package]
 name = "xlit-fcitx5"
-version = "0.1.0"
+version = "0.1.1"
 description = "Fcitx5 input method for the xlit transliteration engine (Linux / KDE)."
 edition.workspace = true
 license.workspace = true

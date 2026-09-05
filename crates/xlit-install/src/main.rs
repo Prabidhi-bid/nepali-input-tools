@@ -45,7 +45,7 @@ mod payload {
 }
 
 const APP_NAME: &str = "Input by Prabidhi.bid";
-const APP_VERSION: &str = "0.1.0";
+const APP_VERSION: &str = "0.1.1";
 const PUBLISHER: &str = "Prabidhi.bid";
 const CLSID: &str = "{438E43E4-3800-4AB1-82A6-A2E831ABF107}";
 const PROFILE_GUID: &str = "{4BE59555-69DD-48CA-8BC8-AB450205A567}";

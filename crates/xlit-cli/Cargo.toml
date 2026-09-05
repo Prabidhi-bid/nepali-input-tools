@@ -1,6 +1,6 @@
 [package]
 name = "xlit-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "Dev REPL for the transliteration engine: Latin in, ranked candidates out."
 edition.workspace = true
 license.workspace = true

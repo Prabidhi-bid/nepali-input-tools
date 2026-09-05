@@ -1,6 +1,6 @@
 [package]
 name = "xlit-config"
-version = "0.1.0"
+version = "0.1.1"
 description = "Word editor for the xlit input method: teach it words it gets wrong."
 edition.workspace = true
 license.workspace = true

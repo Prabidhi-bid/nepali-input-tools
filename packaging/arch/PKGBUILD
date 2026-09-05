@@ -10,7 +10,7 @@
 
 pkgbase=xlit
 pkgname=('xlit' 'xlit-ibus' 'xlit-fcitx5')
-pkgver=0.1.0
+pkgver=0.1.1
 pkgrel=1
 pkgdesc='Nepali transliteration input method: type namaste, get नमस्ते'
 arch=('x86_64' 'aarch64')

@@ -1,6 +1,6 @@
 [package]
 name = "xlit-install"
-version = "0.1.0"
+version = "0.1.1"
 description = "Installer for the xlit Windows text service: copies the DLLs and registers the TIP through the TSF APIs."
 edition.workspace = true
 license.workspace = true

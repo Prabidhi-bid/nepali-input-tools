@@ -11,7 +11,7 @@
 %global _name xlit
 
 Name:           xlit
-Version:        0.1.0
+Version:        0.1.1
 Release:        1%{?dist}
 Summary:        Nepali transliteration input method
 
@@ -90,5 +90,9 @@ make check
 %{_datadir}/fcitx5/inputmethod/xlit.conf
 
 %changelog
+* Sun Sep 06 2026 Prabidhi.bid <prdpspkt@gmail.com> - 0.1.1-1
+- Fcitx5 addon builds and loads; its candidate list no longer flickers.
+- Windows: one floating bar on the desktop, numeric-keypad digits.
+
 * Fri Sep 05 2025 Prabidhi.bid <prdpspkt@gmail.com> - 0.1.0-1
 - First packaged release: IBus and Fcitx5 frontends, engine daemon, CLI.

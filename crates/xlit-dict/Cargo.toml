@@ -1,6 +1,6 @@
 [package]
 name = "xlit-dict"
-version = "0.1.0"
+version = "0.1.1"
 description = "Dictionary re-ranking layer: mmap'd FST of Devanagari words + frequencies."
 edition.workspace = true
 license.workspace = true

@@ -10,7 +10,7 @@
 ; Build via installer\build-setup.ps1, or directly:
 ;   iscc /DDllPathX64="...\x86_64-pc-windows-msvc\release\xlit_tsf.dll" ^
 ;        [/DDllPathX86="...\i686-pc-windows-msvc\release\xlit_tsf.dll"] ^
-;        [/DAppVersion=0.1.0] [/DSetupPassword=<pw>] xlit-tsf.iss
+;        [/DAppVersion=0.1.1] [/DSetupPassword=<pw>] xlit-tsf.iss
 ;
 ; Each regsvr32 runs DllRegisterServer -> COM CLSID keys +
 ; ITfInputProcessorProfileMgr::RegisterProfile (enabled-by-default) +
@@ -25,7 +25,7 @@
   #error Pass /DDllPathX64=<full path to the x64 xlit_tsf.dll>
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.1.1"
 #endif
 
 #define AppName "Input by Prabidhi.bid"

@@ -1,6 +1,6 @@
 [package]
 name = "xlit-daemon"
-version = "0.1.0"
+version = "0.1.1"
 description = "One process that owns the transliteration engine; frontends are thin IPC clients."
 edition.workspace = true
 license.workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "xlit-ibus"
-version = "0.1.0"
+version = "0.1.1"
 description = "IBus input method engine for the xlit transliteration engine (Linux)."
 edition.workspace = true
 license.workspace = true
