@@ -16,7 +16,7 @@ use windows::core::{implement, Ref, Result, BOOL, GUID};
 use windows::Win32::Foundation::{LPARAM, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, GetKeyboardState, ToUnicode, VK_BACK, VK_CAPITAL, VK_CONTROL, VK_DOWN, VK_ESCAPE,
-    VK_MENU, VK_SHIFT, VK_UP,
+    VK_MENU, VK_NUMPAD0, VK_NUMPAD9, VK_SHIFT, VK_UP,
 };
 use windows::Win32::UI::TextServices::{ITfContext, ITfKeyEventSink, ITfKeyEventSink_Impl};
 
@@ -104,15 +104,25 @@ fn classify(vk: u16, scan: u32, composing: bool, ncands: usize) -> Action {
         return Action::Letter(c);
     }
 
-    // The number row does double duty. Mid-word it picks from the candidate
-    // list, the way every other IME does; the rest of the time it types a
-    // Devanagari digit. Shift+number is punctuation, never either.
-    if (0x30..=0x39).contains(&vk) && !shift {
-        let pick = vk.wrapping_sub(0x31) as usize; // '1' -> 0; '0' wraps out of range
-        if composing && pick < ncands {
-            return Action::Pick(pick);
+    // The number row and the numeric keypad both do double duty. Mid-word they
+    // pick from the candidate list, the way every other IME does; the rest of
+    // the time they type a Devanagari digit.
+    //
+    // Shift+number on the main row is punctuation (@, #, ...) and is neither.
+    // The keypad needs no such guard: with NumLock on, Shift turns those keys
+    // back into Home/End/arrows, so a VK_NUMPAD* only ever arrives as a plain
+    // digit — and with NumLock off they never arrive as one at all.
+    let digit = match vk {
+        0x30..=0x39 if !shift => Some(vk - 0x30),
+        v if (VK_NUMPAD0.0..=VK_NUMPAD9.0).contains(&v) => Some(vk - VK_NUMPAD0.0),
+        _ => None,
+    };
+    if let Some(d) = digit {
+        // 1-9 pick candidates 0-8; 0 picks nothing.
+        if composing && d != 0 && ((d - 1) as usize) < ncands {
+            return Action::Pick((d - 1) as usize);
         }
-        return Action::Digit((vk as u8) as char);
+        return Action::Digit((b'0' + d as u8) as char);
     }
 
     if !composing {
@@ -142,19 +152,22 @@ impl KeyEventSink_Impl {
 impl ITfKeyEventSink_Impl for KeyEventSink_Impl {
     /// Focus moved between documents.
     ///
-    /// This is also what keeps the floating bar singular. Every process that
-    /// takes input has its own session and its own bar; showing it only while
-    /// this document holds focus means exactly one is ever on screen.
+    /// This is one of the three rules that keep the floating bar singular -
+    /// see [`crate::bar`]. Every process that takes input has its own session
+    /// and its own bar, and only the one whose document holds the focus is on
+    /// screen; showing it is also what tells the others to stand down.
     fn OnSetFocus(&self, fforeground: BOOL) -> Result<()> {
         crate::debug(&format!("OnSetFocus foreground={}", fforeground.as_bool()));
-        let weak = std::rc::Rc::downgrade(&self.sess);
-        let mut s = self.sess.borrow_mut();
-        // The candidate popup belongs to the document we just left.
-        s.window.hide();
+        // The candidate popup belongs to the document we just left. Borrow
+        // only if it is free: this arrives from other people's processes at
+        // moments we do not choose, and a panic here aborts them.
+        if let Ok(mut s) = self.sess.try_borrow_mut() {
+            s.window.hide();
+        }
         if fforeground.as_bool() {
-            s.bar.show(&weak);
+            crate::bar::show(&std::rc::Rc::downgrade(&self.sess));
         } else {
-            s.bar.hide();
+            crate::bar::hide();
         }
         Ok(())
     }
@@ -178,12 +191,24 @@ impl ITfKeyEventSink_Impl for KeyEventSink_Impl {
     }
 
     fn OnKeyDown(&self, pic: Ref<'_, ITfContext>, wparam: WPARAM, lparam: LPARAM) -> Result<BOOL> {
+        // Mirror OnTestKeyDown's null guard exactly. Returning `Err` here
+        // would leave TSF's `BOOL *pfEaten` out-parameter unwritten —
+        // windows-rs returns the HRESULT without touching it — and the
+        // framework then branches on whatever was in that memory.
+        if pic.is_null() {
+            return Ok(BOOL(0));
+        }
         let ctx = pic.ok()?;
         // Stash the context so a click on the status bar, which has none of its
         // own, can still commit a word in progress.
         if let Ok(mut s) = self.sess.try_borrow_mut() {
             s.last_ctx = Some(ctx.clone());
         }
+        // Typing is the strongest evidence there is of which application the
+        // bar belongs over, and the focus callbacks that normally decide it
+        // come from processes we do not control. If one went missing, this is
+        // where the bar comes back.
+        crate::bar::ensure_visible(&std::rc::Rc::downgrade(&self.sess));
         let Some((composing, ncands)) = self.state() else {
             return Ok(BOOL(0));
         };
@@ -193,9 +218,17 @@ impl ITfKeyEventSink_Impl for KeyEventSink_Impl {
 
         match classify(vk, scan, composing, ncands) {
             Action::Ignore => return Ok(BOOL(0)),
-            // A control we cannot compose in reports the letter as unhandled
-            // rather than swallowing it.
-            Action::Letter(c) => return Ok(BOOL(session::insert(&self.sess, ctx, c).into())),
+            Action::Letter(c) => {
+                // A control that refuses composition still gets the letter,
+                // as a plain literal insert, so the keyboard degrades to
+                // Latin rather than going dead. What we must not do is call
+                // it unhandled: OnTestKeyDown already claimed the key, and
+                // answering BOOL(0) leaves TSF's record of the keystroke
+                // disagreeing with the edit we just made.
+                if !session::insert(&self.sess, ctx, c) {
+                    session::insert_literal(&self.sess, ctx, &c.to_string());
+                }
+            }
             Action::Backspace => session::backspace(&self.sess, ctx),
             Action::Cancel => session::cancel(&self.sess, ctx),
             Action::Move(d) => session::move_selection(&self.sess, ctx, d),
@@ -208,10 +241,13 @@ impl ITfKeyEventSink_Impl for KeyEventSink_Impl {
                 let deva = crate::engine::literal(d);
                 if composing {
                     session::commit(&self.sess, ctx, &deva);
-                } else if !session::insert_literal(&self.sess, ctx, &deva) {
-                    // Control refused the edit; let the ASCII digit through
-                    // rather than swallowing the key.
-                    return Ok(BOOL(0));
+                } else {
+                    // Report the key as handled whether or not the edit landed.
+                    // OnTestKeyDown already claimed it, so it never reaches the
+                    // application either way; answering BOOL(0) here does not
+                    // hand the digit back, it only tells TSF something other
+                    // than what OnTestKeyDown promised.
+                    session::insert_literal(&self.sess, ctx, &deva);
                 }
             }
         }
@@ -234,10 +270,13 @@ impl ITfKeyEventSink_Impl for KeyEventSink_Impl {
                 session::commit(&self.sess, ctx, "");
             }
         }
-        let mut s = self.sess.borrow_mut();
-        s.enabled = !s.enabled;
-        crate::debug(if s.enabled { "enabled" } else { "passthrough" });
-        s.bar.refresh();
+        let enabled = {
+            let mut s = self.sess.borrow_mut();
+            s.enabled = !s.enabled;
+            s.enabled
+        };
+        crate::debug(if enabled { "enabled" } else { "passthrough" });
+        crate::bar::refresh();
         Ok(BOOL(1))
     }
 }

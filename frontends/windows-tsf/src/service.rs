@@ -111,10 +111,22 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
         // change: activation is the moment the user switched *to* this keyboard,
         // and that is when they expect to see it. OnSetFocus keeps it to the
         // focused application from here on.
-        if let Ok(mut s) = sess.try_borrow_mut() {
-            let weak = std::rc::Rc::downgrade(&sess);
-            s.bar.show(&weak);
-        };
+        //
+        // Only on the thread that actually holds the focus, though. Switching
+        // input method activates the text service in *every* process that has
+        // a text input context, not only the application in front, and when
+        // each of them put a bar up the user was left with a column of them -
+        // one per running application, scattered rather than stacked because
+        // DPI-unaware processes read the same saved position as different
+        // pixels. Everybody else waits for `OnSetFocus(true)`; a thread
+        // manager that will not answer gets a bar anyway, since no bar at all
+        // is the worse failure.
+        let focused = unsafe { thread_mgr.IsThreadFocus() }
+            .map(|f| f.as_bool())
+            .unwrap_or(true);
+        if focused {
+            crate::bar::show(&std::rc::Rc::downgrade(&sess));
+        }
 
         *self.inner.borrow_mut() = Some(Active { tid, keystroke, sess, toggle });
         crate::debug(&format!("Activate (client id {tid})"));
@@ -133,16 +145,18 @@ impl TextService_Impl {
     /// and safe to call twice — a sink left advised pins this DLL in the host
     /// process for the rest of its life.
     fn teardown(&self) {
+        // Deactivate means the user switched away from this keyboard, so the
+        // bar goes with it. First, and without touching the session: the bar
+        // belongs to the thread, and a `try_borrow_mut` that failed here would
+        // leave it on screen for the rest of the process's life.
+        crate::bar::destroy();
         let Some(a) = self.inner.borrow_mut().take() else { return };
         unsafe {
             let _ = a.keystroke.UnpreserveKey(&GUID_TOGGLE, &a.toggle);
             let _ = a.keystroke.UnadviseKeyEventSink(a.tid);
         }
-        // Deactivate means the user switched away from this keyboard, so the
-        // bar goes with it.
         if let Ok(mut s) = a.sess.try_borrow_mut() {
             s.window.hide();
-            s.bar.hide();
         };
     }
 }

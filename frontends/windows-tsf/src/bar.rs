@@ -1,39 +1,57 @@
 //! The floating status bar.
 //!
 //! A small always-on-top pill showing whether keystrokes are being
-//! transliterated (**ने**) or passed through (**EN**), with a `+` that opens
+//! transliterated (**ने**) or passed through (**EN**), beside a `+` that opens
 //! the word editor. Click the left half to toggle; drag it anywhere and the
 //! position is remembered.
 //!
-//! **One bar, many processes.** A text service is loaded into every process
-//! that takes text input, so each one has its own `Session` and would put up
-//! its own bar. Visibility is therefore tied to focus — [`StatusBar::show`] is
-//! called from `OnSetFocus(true)` and [`StatusBar::hide`] from
-//! `OnSetFocus(false)` — so only the focused application's bar is ever on
-//! screen, and it looks like the single floating widget the user expects.
+//! **One bar on the desktop.** That is the whole difficulty here. A text
+//! service is loaded into every process that takes text input, and every
+//! activation of it makes a fresh [`Session`]. Three rules keep that from
+//! becoming a column of floating pills:
 //!
-//! The window owns a weak reference to its session so a click can flip the
-//! mode. Weak, because the window is destroyed by the session's `Drop`: an
-//! owning reference would be a cycle that never runs.
+//! 1. **The window belongs to the thread, not to the session.** It lives in a
+//!    thread-local slot, put up by [`show`] and taken down by [`destroy`] on
+//!    `Deactivate`. Windows re-activates threads it never deactivated, and
+//!    while the window hung off the session, each of those activations built
+//!    another one and left the previous one on screen.
+//! 2. **Only the focused thread puts one up.** Switching input method
+//!    activates the text service in every process that holds an input context,
+//!    not just the application in front, so `Activate` asks
+//!    `ITfThreadMgr::IsThreadFocus` first and the other threads wait for
+//!    `OnSetFocus(true)`. Those background bars did not even stack neatly: a
+//!    DPI-unaware process reads the same saved coordinates as different
+//!    pixels, so each one landed somewhere else - see [`saved_position`].
+//! 3. **Putting one up takes the rest down.** Rules 1 and 2 both depend on
+//!    processes we do not control calling us back, and when one does not, its
+//!    bar is still on screen. So [`show`] posts a stand-down message to every
+//!    window of our class on the desktop, whichever process owns it, and they
+//!    hide themselves.
+//!
+//! The window holds a weak reference to its session so a click can flip the
+//! mode. Weak, because the window outlives every individual session on its
+//! thread, and because an owning reference would be a cycle.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Weak;
 use std::sync::OnceLock;
 
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateFontW, CreateSolidBrush, DeleteObject, EndPaint, FillRect, InvalidateRect,
-    MonitorFromPoint, RoundRect, SelectObject, SetBkMode, SetTextColor, TextOutW, CLEARTYPE_QUALITY,
-    CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH, FF_DONTCARE, FW_SEMIBOLD, HGDIOBJ,
-    MONITOR_DEFAULTTONULL, MONITOR_DEFAULTTOPRIMARY, MONITOR_FROM_FLAGS, OUT_DEFAULT_PRECIS,
-    PAINTSTRUCT, TRANSPARENT,
+    BeginPaint, CreateFontW, CreatePen, CreateRoundRectRgn, CreateSolidBrush, DeleteObject,
+    DrawTextW, EndPaint, FillRect, GetStockObject, InvalidateRect, MonitorFromPoint, RoundRect,
+    SelectObject, SetBkMode, SetTextColor, SetWindowRgn, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS,
+    DEFAULT_CHARSET, DEFAULT_PITCH, DT_CENTER, DT_SINGLELINE, DT_VCENTER, FF_DONTCARE, FW_BOLD,
+    HDC, HGDIOBJ, HOLLOW_BRUSH, MONITOR_DEFAULTTONULL, MONITOR_DEFAULTTOPRIMARY,
+    MONITOR_FROM_FLAGS, OUT_DEFAULT_PRECIS, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetCursorPos, GetWindowRect, LoadCursorW,
-    RegisterClassW, SetWindowPos, ShowWindow, CS_HREDRAW, CS_VREDRAW,
-    IDC_HAND, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE,
-    SW_SHOWNOACTIVATE, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_PAINT,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowExW, GetCursorPos, GetWindowRect,
+    IsWindowVisible, LoadCursorW, PostMessageW, RegisterClassW, RegisterWindowMessageW,
+    SetWindowPos, ShowWindow,
+    CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, IDC_HAND, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
+    SW_HIDE, SW_SHOWNOACTIVATE, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_PAINT,
     WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
@@ -46,8 +64,25 @@ const BAR_W: i32 = 74;
 const BAR_H: i32 = 30;
 /// Where the mode half ends and the `+` half begins.
 const SPLIT_X: i32 = 46;
+/// Corner radius, used for the outline and for the window region alike.
+const CORNER: i32 = 12;
 /// Pointer travel, in pixels, above which a press counts as a drag not a click.
 const DRAG_SLOP: i32 = 4;
+
+// Fixed palette: the bar floats over somebody else's window and has to look
+// the same wherever it lands. COLORREF is 0x00BBGGRR, not RGB.
+/// The pill.
+const BG: COLORREF = COLORREF(0x00_FF_FF_FF);
+/// The pill while keys pass through - the same white, dimmed just enough to
+/// tell the two states apart without reading the label.
+const BG_OFF: COLORREF = COLORREF(0x00_F0_F0_F0);
+/// Hairline edge, so the pill still reads as a surface on a white document.
+const BORDER: COLORREF = COLORREF(0x00_D6_D6_D6);
+/// Label and icon: grey at half strength. The pill is a flat white, so
+/// compositing #555555 over it at 50% alpha is simply the colour halfway
+/// between the two - (0x55 + 0xFF) / 2 - with none of the cost of an
+/// alpha-blended layer.
+const INK: COLORREF = COLORREF(0x00_AA_AA_AA);
 
 struct Bar {
     sess: Weak<RefCell<Session>>,
@@ -63,106 +98,195 @@ impl Drop for Bar {
     }
 }
 
-pub struct StatusBar {
-    hwnd: HWND,
+thread_local! {
+    /// This thread's one and only bar. See rule 1 in the module comment.
+    static BAR: Cell<HWND> = const { Cell::new(HWND(std::ptr::null_mut())) };
 }
 
-impl StatusBar {
-    pub const fn new() -> Self {
-        StatusBar { hwnd: HWND(std::ptr::null_mut()) }
-    }
+fn bar_hwnd() -> HWND {
+    BAR.with(|b| b.get())
+}
 
-    /// Put the bar on screen, creating it the first time. `sess` is the session
-    /// whose mode it shows and toggles.
-    pub fn show(&mut self, sess: &Weak<RefCell<Session>>) {
-        if self.hwnd.is_invalid() && !self.create(sess.clone()) {
+/// Put this thread's bar on screen - creating it if this is the first time -
+/// and take every other bar on the desktop down.
+///
+/// `sess` is the session whose mode it shows and toggles, rebound on every
+/// call: the thread gets a new session on every activation, while the window
+/// stays.
+pub fn show(sess: &Weak<RefCell<Session>>) {
+    let mut hwnd = bar_hwnd();
+    if hwnd.is_invalid() {
+        let Some(h) = create(sess.clone()) else { return };
+        hwnd = h;
+    } else if let Some(st) = state(hwnd) {
+        if let Ok(mut b) = st.try_borrow_mut() {
+            b.sess = sess.clone();
+        }
+    }
+    unsafe {
+        _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        _ = InvalidateRect(Some(hwnd), None, true);
+    }
+    evict_others(hwnd);
+}
+
+/// Put the bar back if it is not on screen, and otherwise do nothing.
+///
+/// The last line of defence, called from the key sink: whatever else went
+/// wrong, the bar the user is typing under should be the one they can see.
+/// `show` alone would be correct but wasteful - it walks the desktop's window
+/// list - and this runs on every keystroke we claim.
+pub fn ensure_visible(sess: &Weak<RefCell<Session>>) {
+    let hwnd = bar_hwnd();
+    if !hwnd.is_invalid() && unsafe { IsWindowVisible(hwnd) }.as_bool() {
+        return;
+    }
+    show(sess);
+}
+
+pub fn hide() {
+    let hwnd = bar_hwnd();
+    if !hwnd.is_invalid() {
+        unsafe { _ = ShowWindow(hwnd, SW_HIDE) };
+    }
+}
+
+/// Repaint after the mode changed by some other route (the toggle key).
+pub fn refresh() {
+    let hwnd = bar_hwnd();
+    if !hwnd.is_invalid() {
+        unsafe { _ = InvalidateRect(Some(hwnd), None, true) };
+    }
+}
+
+/// Take this thread's bar down for good, on `Deactivate`.
+///
+/// Destroying rather than hiding is what holds a thread to one window: the
+/// next `Activate` builds a fresh one and there is nothing left over to
+/// reappear. Idempotent, and a no-op on a thread that never showed one.
+pub fn destroy() {
+    let hwnd = BAR.with(|b| b.replace(HWND(std::ptr::null_mut())));
+    if !hwnd.is_invalid() {
+        unsafe { _ = DestroyWindow(hwnd) };
+    }
+}
+
+fn create(sess: Weak<RefCell<Session>>) -> Option<HWND> {
+    register_class();
+    let font = unsafe {
+        HGDIOBJ(
+            CreateFontW(
+                -16,
+                0,
+                0,
+                0,
+                FW_BOLD.0 as i32,
+                0,
+                0,
+                0,
+                DEFAULT_CHARSET,
+                OUT_DEFAULT_PRECIS,
+                CLIP_DEFAULT_PRECIS,
+                CLEARTYPE_QUALITY,
+                DEFAULT_PITCH.0 as u32 | FF_DONTCARE.0 as u32,
+                w!("Nirmala UI"),
+            )
+            .0,
+        )
+    };
+    let state: *mut RefCell<Bar> = Box::into_raw(Box::new(RefCell::new(Bar {
+        sess,
+        font,
+        drag: None,
+        moved: false,
+    })));
+
+    let (x, y) = saved_position();
+    let hwnd = unsafe {
+        CreateWindowExW(
+            WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+            CLASS_NAME,
+            PCWSTR::null(),
+            WS_POPUP,
+            x,
+            y,
+            BAR_W,
+            BAR_H,
+            None,
+            None,
+            Some(crate::dll_hmodule().into()),
+            Some(state as *const _),
+        )
+    };
+    match hwnd {
+        Ok(h) if !h.is_invalid() => {
+            round_corners(h);
+            BAR.with(|b| b.set(h));
+            Some(h)
+        }
+        _ => {
+            drop(unsafe { Box::from_raw(state) });
+            crate::debug("status bar could not be created");
+            None
+        }
+    }
+}
+
+/// Clip the window itself to the pill shape.
+///
+/// Painting rounded corners is not enough: the corners of a white pill would
+/// be white squares over whatever is behind them. A region cuts them out of
+/// the window, and the drop shadow follows it.
+fn round_corners(hwnd: HWND) {
+    unsafe {
+        // The region's right and bottom edges are exclusive.
+        let rgn = CreateRoundRectRgn(0, 0, BAR_W + 1, BAR_H + 1, CORNER, CORNER);
+        if rgn.is_invalid() {
             return;
         }
-        unsafe {
-            _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
-            _ = InvalidateRect(Some(self.hwnd), None, true);
-        }
-    }
-
-    pub fn hide(&mut self) {
-        if !self.hwnd.is_invalid() {
-            unsafe { _ = ShowWindow(self.hwnd, SW_HIDE) };
-        }
-    }
-
-    /// Repaint after the mode changed by some other route (the toggle key).
-    pub fn refresh(&self) {
-        if !self.hwnd.is_invalid() {
-            unsafe { _ = InvalidateRect(Some(self.hwnd), None, true) };
-        }
-    }
-
-    fn create(&mut self, sess: Weak<RefCell<Session>>) -> bool {
-        register_class();
-        let font = unsafe {
-            HGDIOBJ(
-                CreateFontW(
-                    -16,
-                    0,
-                    0,
-                    0,
-                    FW_SEMIBOLD.0 as i32,
-                    0,
-                    0,
-                    0,
-                    DEFAULT_CHARSET,
-                    OUT_DEFAULT_PRECIS,
-                    CLIP_DEFAULT_PRECIS,
-                    CLEARTYPE_QUALITY,
-                    DEFAULT_PITCH.0 as u32 | FF_DONTCARE.0 as u32,
-                    w!("Nirmala UI"),
-                )
-                .0,
-            )
-        };
-        let state: *mut RefCell<Bar> = Box::into_raw(Box::new(RefCell::new(Bar {
-            sess,
-            font,
-            drag: None,
-            moved: false,
-        })));
-
-        let (x, y) = saved_position();
-        let hwnd = unsafe {
-            CreateWindowExW(
-                WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
-                CLASS_NAME,
-                PCWSTR::null(),
-                WS_POPUP,
-                x,
-                y,
-                BAR_W,
-                BAR_H,
-                None,
-                None,
-                Some(crate::dll_hmodule().into()),
-                Some(state as *const _),
-            )
-        };
-        match hwnd {
-            Ok(h) if !h.is_invalid() => {
-                self.hwnd = h;
-                true
-            }
-            _ => {
-                drop(unsafe { Box::from_raw(state) });
-                crate::debug("status bar could not be created");
-                false
-            }
+        // On success the window owns the region and frees it; on failure it is
+        // still ours to delete.
+        if SetWindowRgn(hwnd, Some(rgn), false) == 0 {
+            _ = DeleteObject(HGDIOBJ(rgn.0));
         }
     }
 }
 
-impl Drop for StatusBar {
-    fn drop(&mut self) {
-        if !self.hwnd.is_invalid() {
-            unsafe { _ = DestroyWindow(self.hwnd) };
+// ---------------------------------------------------------------------------
+// One bar across all processes
+// ---------------------------------------------------------------------------
+
+/// The message that asks a bar in another process to stand down.
+///
+/// Registered, so the id is unique desktop-wide and cannot collide with
+/// anything else the window might be sent.
+fn stand_down_msg() -> u32 {
+    static MSG: OnceLock<u32> = OnceLock::new();
+    *MSG.get_or_init(|| unsafe { RegisterWindowMessageW(w!("xlit_tsf_stand_down")) })
+}
+
+/// Ask every other bar on the desktop to hide itself.
+///
+/// Posted rather than sent: the owning process may be busy or wedged, and this
+/// is housekeeping. A bar that never gets the message is no worse off than it
+/// was, while a blocked `SendMessage` would take the typing user down with it.
+fn evict_others(mine: HWND) {
+    let msg = stand_down_msg();
+    if msg == 0 {
+        return;
+    }
+    let mut after: Option<HWND> = None;
+    // Bounded rather than `loop`: the window list can change underneath the
+    // walk, and no desktop has 256 of these.
+    for _ in 0..256 {
+        // `Err` is how "no more windows of this class" arrives.
+        let Ok(h) = (unsafe { FindWindowExW(None, after, CLASS_NAME, PCWSTR::null()) }) else {
+            return;
+        };
+        if h != mine {
+            unsafe { _ = PostMessageW(Some(h), msg, WPARAM(0), LPARAM(0)) };
         }
+        after = Some(h);
     }
 }
 
@@ -261,7 +385,9 @@ fn register_class() {
     static ONCE: OnceLock<()> = OnceLock::new();
     ONCE.get_or_init(|| unsafe {
         let class = WNDCLASSW {
-            style: CS_HREDRAW | CS_VREDRAW,
+            // The shadow is what separates a white pill from the white
+            // document underneath it.
+            style: CS_HREDRAW | CS_VREDRAW | CS_DROPSHADOW,
             lpfnWndProc: Some(wndproc),
             hInstance: crate::dll_hmodule().into(),
             hCursor: LoadCursorW(None, IDC_HAND).unwrap_or_default(),
@@ -281,6 +407,11 @@ fn state<'a>(hwnd: HWND) -> Option<&'a RefCell<Bar>> {
 }
 
 extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    // Another process has just put its bar up; ours is the stale one now.
+    if msg == stand_down_msg() {
+        unsafe { _ = ShowWindow(hwnd, SW_HIDE) };
+        return LRESULT(0);
+    }
     unsafe {
         match msg {
             windows::Win32::UI::WindowsAndMessaging::WM_NCCREATE => {
@@ -421,39 +552,68 @@ fn paint(hwnd: HWND) {
         let mut rc = RECT::default();
         _ = GetWindowRect(hwnd, &mut rc);
         let (w, h) = (rc.right - rc.left, rc.bottom - rc.top);
-        let full = RECT { left: 0, top: 0, right: w, bottom: h };
 
-        // Green when transliterating, grey when passing through - readable at a
-        // glance without reading the label.
-        let accent = if enabled { COLORREF(0x00_5B_9E_2D) } else { COLORREF(0x00_60_60_60) };
-        let bg = CreateSolidBrush(accent);
-        let pen_hold = SelectObject(hdc, HGDIOBJ(bg.0));
-        FillRect(hdc, &full, bg);
-        _ = RoundRect(hdc, 0, 0, w, h, 10, 10);
-        SelectObject(hdc, pen_hold);
+        // Flat fill, then the outline on top of it. The window region has
+        // already cut the corners away, so the fill can be the whole rectangle.
+        let bg = CreateSolidBrush(if enabled { BG } else { BG_OFF });
+        FillRect(hdc, &RECT { left: 0, top: 0, right: w, bottom: h }, bg);
         _ = DeleteObject(HGDIOBJ(bg.0));
+
+        let pen = CreatePen(PS_SOLID, 1, BORDER);
+        let old_pen = SelectObject(hdc, HGDIOBJ(pen.0));
+        // Hollow brush, or RoundRect would fill the pill with the last brush
+        // selected instead of just drawing its edge.
+        let old_brush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
+        _ = RoundRect(hdc, 0, 0, w, h, CORNER, CORNER);
+        SelectObject(hdc, old_brush);
+        SelectObject(hdc, old_pen);
+        _ = DeleteObject(HGDIOBJ(pen.0));
 
         if let Some(st) = state(hwnd) {
             if let Ok(b) = st.try_borrow() {
                 let old = SelectObject(hdc, b.font);
                 SetBkMode(hdc, TRANSPARENT);
-                SetTextColor(hdc, COLORREF(0x00_FF_FF_FF));
-
-                let label: Vec<u16> =
+                SetTextColor(hdc, INK);
+                let mut label: Vec<u16> =
                     if enabled { "ने" } else { "EN" }.encode_utf16().collect();
-                _ = TextOutW(hdc, 12, 4, &label);
-
-                // Divider and the add-word affordance.
-                let line = RECT { left: SPLIT_X - 1, top: 6, right: SPLIT_X, bottom: h - 6 };
-                let div = CreateSolidBrush(COLORREF(0x00_FF_FF_FF));
-                FillRect(hdc, &line, div);
-                _ = DeleteObject(HGDIOBJ(div.0));
-
-                let plus: Vec<u16> = "+".encode_utf16().collect();
-                _ = TextOutW(hdc, SPLIT_X + 10, 4, &plus);
+                // Centred by measurement rather than by a hand-tuned offset:
+                // the two labels are different scripts and different widths.
+                let mut half = RECT { left: 0, top: 0, right: SPLIT_X, bottom: h };
+                DrawTextW(hdc, &mut label, &mut half, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
                 SelectObject(hdc, old);
             }
         }
+
+        // Divider, then the add-word affordance.
+        let line = RECT { left: SPLIT_X, top: 8, right: SPLIT_X + 1, bottom: h - 8 };
+        let div = CreateSolidBrush(BORDER);
+        FillRect(hdc, &line, div);
+        _ = DeleteObject(HGDIOBJ(div.0));
+
+        draw_plus(hdc, (SPLIT_X + w) / 2, h / 2);
+
         _ = EndPaint(hwnd, &ps);
+    }
+}
+
+/// The `+`, drawn as two bars rather than typed as a glyph.
+///
+/// A font `+` sits wherever its face puts it — above the optical centre in
+/// most UI faces, and somewhere else again in whatever GDI substitutes when
+/// Nirmala UI is missing. Two rectangles are the same crisp, centred cross on
+/// every machine.
+fn draw_plus(hdc: HDC, cx: i32, cy: i32) {
+    // Half an arm, and half the stroke: an 11px cross, 3px thick.
+    const ARM: i32 = 5;
+    const HALF: i32 = 1;
+    unsafe {
+        let ink = CreateSolidBrush(INK);
+        let across =
+            RECT { left: cx - ARM, top: cy - HALF, right: cx + ARM + 1, bottom: cy + HALF + 1 };
+        let down =
+            RECT { left: cx - HALF, top: cy - ARM, right: cx + HALF + 1, bottom: cy + ARM + 1 };
+        FillRect(hdc, &across, ink);
+        FillRect(hdc, &down, ink);
+        _ = DeleteObject(HGDIOBJ(ink.0));
     }
 }

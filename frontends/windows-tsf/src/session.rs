@@ -25,11 +25,11 @@ use std::rc::{Rc, Weak};
 use windows::core::{implement, Interface, Ref, Result, BOOL};
 use windows::Win32::UI::TextServices::{
     ITfComposition, ITfCompositionSink, ITfCompositionSink_Impl, ITfContext, ITfContextComposition,
-    ITfInsertAtSelection, ITfRange, TF_AE_END, TF_ANCHOR_END, TF_IAS_NOQUERY, TF_IAS_QUERYONLY,
+    ITfInsertAtSelection, ITfRange, INSERT_TEXT_AT_SELECTION_FLAGS, TF_AE_END, TF_ANCHOR_END,
+    TF_IAS_QUERYONLY,
     TF_SELECTION, TF_SELECTIONSTYLE,
 };
 
-use crate::bar::StatusBar;
 use crate::candwin::CandWindow;
 use crate::{editsession, engine};
 
@@ -54,8 +54,6 @@ pub struct Session {
     pub enabled: bool,
     /// The candidate popup. Created lazily on the first word typed.
     pub window: CandWindow,
-    /// The floating mode indicator.
-    pub bar: StatusBar,
     /// The context of the last key event, so the status bar — which is clicked
     /// with the mouse and so has no context of its own — can still commit a
     /// word in progress before switching modes.
@@ -73,7 +71,6 @@ impl Session {
             comp: None,
             enabled: true,
             window: CandWindow::new(),
-            bar: StatusBar::new(),
             last_ctx: None,
         }))
     }
@@ -112,10 +109,11 @@ impl Session {
 
 /// Append a Latin character and re-render.
 ///
-/// Returns false if the document refused the edit. That matters: we claim every
-/// letter key in `OnTestKeyDown`, so a control we cannot compose in would look
-/// like a dead keyboard. On failure we put the buffer back the way it was and
-/// report the key as unhandled, degrading to a plain Latin keyboard instead.
+/// Returns false if the document refused the edit, having first put the buffer
+/// back the way it was. The caller must still report the key as handled — we
+/// claim every letter in `OnTestKeyDown` — so it writes the character as a
+/// plain literal instead, and the keyboard degrades to Latin rather than
+/// going dead.
 pub fn insert(sess: &SharedSession, ctx: &ITfContext, c: char) -> bool {
     let tid = {
         let mut s = sess.borrow_mut();
@@ -218,7 +216,13 @@ pub fn insert_literal(sess: &SharedSession, ctx: &ITfContext, text: &str) -> boo
     let text: Vec<u16> = text.encode_utf16().collect();
     let r = editsession::run(ctx, tid, move |ec, ctx| {
         let insert: ITfInsertAtSelection = ctx.cast()?;
-        let range = unsafe { insert.InsertTextAtSelection(ec, TF_IAS_NOQUERY, &text)? };
+        // Flags 0, not TF_IAS_NOQUERY: NOQUERY performs the insert but leaves
+        // `ppRange` NULL, and windows-rs turns a NULL out-parameter into an
+        // `Err`. So the text went in and we still reported failure, which left
+        // TSF and this sink disagreeing about whether the key was handled.
+        let range = unsafe {
+            insert.InsertTextAtSelection(ec, INSERT_TEXT_AT_SELECTION_FLAGS(0), &text)?
+        };
         let end = unsafe { range.Clone()? };
         unsafe { end.Collapse(ec, TF_ANCHOR_END)? };
         set_selection(ec, ctx, end)
