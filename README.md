@@ -41,8 +41,10 @@ even when it cannot know the spelling.
       (see [frontends/windows-tsf/README.md](frontends/windows-tsf/README.md))
 - [x] Accuracy harness (`xlit-eval`) — top-1 / top-5 / MRR / CER against a
       held-out word list ([crates/xlit-eval/README.md](crates/xlit-eval/README.md))
-- [ ] Corpus-derived dictionary seed — loanwords and proper nouns are where the
-      numbers say the engine loses
+- [x] Latin-keyed loanwords and proper nouns — `computer`, `kathmandu`, spelled
+      the way people type them (`xlit-dict/data/latin-keys-ne.tsv`)
+- [ ] Corpus-derived dictionary seed — every word outside the lists still falls
+      back to the literal reading
 - [ ] Packaging: per-distro Linux packages, language packs
 
 See [docs/architecture.md](docs/architecture.md) for the full plan and milestones.
@@ -75,7 +77,7 @@ cargo run -p xlit-cli -- --client namaste duniya
 cargo test
 ```
 
-How well does it actually work? 62.8% of a held-out list comes out right on the
+How well does it actually work? 81.1% of a held-out list comes out right on the
 first candidate today, and 100% of the words spelled the schema's own way:
 
 ```bash
@@ -90,6 +92,7 @@ crates/
     schemas/     one .toml per language (ne.toml = Nepali)
   xlit-dict/     dictionary Ranker: FST of word->freq; exact/fuzzy/prefix
     seed/        ne.tsv — small built-in word list
+    data/        ne-words.tsv (generated) + latin-keys-ne.tsv (hand-written)
     src/bin/     build.rs — TSV -> .fst compiler
   xlit-learn/    learning Ranker: remembers (input -> chosen), JSON-backed
   xlit-ipc/      protocol + transport between frontends and the daemon

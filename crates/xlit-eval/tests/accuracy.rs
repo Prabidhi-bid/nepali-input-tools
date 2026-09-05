@@ -28,16 +28,16 @@ fn score(cases: &[Case]) -> xlit_eval::Report {
 fn overall_accuracy_does_not_regress() {
     let report = score(&builtin_set());
     assert!(
-        report.top1_rate() >= 0.60,
+        report.top1_rate() >= 0.78,
         "top-1 fell to {:.1}%",
         report.top1_rate() * 100.0
     );
     assert!(
-        report.top5_rate() >= 0.67,
+        report.top5_rate() >= 0.85,
         "top-5 fell to {:.1}%",
         report.top5_rate() * 100.0
     );
-    assert!(report.cer() <= 0.20, "CER rose to {:.3}", report.cer());
+    assert!(report.cer() <= 0.08, "CER rose to {:.3}", report.cer());
 }
 
 /// Rows spelled in the schema's own conventions need no dictionary at all: if
@@ -75,8 +75,30 @@ fn casual_typing_still_clears_its_own_floor() {
         .collect();
     let report = score(&cases);
     assert!(
-        report.top1_rate() >= 0.55,
+        report.top1_rate() >= 0.75,
         "casual top-1 fell to {:.1}%",
         report.top1_rate() * 100.0
     );
+}
+
+/// Loanwords and proper nouns are reached through hand-written Latin keys in
+/// `xlit-dict/data/latin-keys-ne.tsv` — `computer`, not a transliteration of
+/// कम्प्युटर. These rows are in that list by construction, so this is a
+/// tripwire for the list still being compiled in and still being consulted,
+/// not evidence about words nobody has added yet.
+#[test]
+fn the_latin_keyed_list_is_reachable() {
+    for tag in ["loan", "proper"] {
+        let cases: Vec<Case> = builtin_set()
+            .into_iter()
+            .filter(|c| c.tags.iter().any(|t| t == tag))
+            .collect();
+        assert!(!cases.is_empty());
+        let report = score(&cases);
+        assert!(
+            report.top1_rate() >= 0.95,
+            "{tag} top-1 fell to {:.1}%",
+            report.top1_rate() * 100.0
+        );
+    }
 }

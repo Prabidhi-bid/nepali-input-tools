@@ -8,8 +8,11 @@
 //! nothing in particular.
 //!
 //! The structure is an `fst::Set` of `"<latin>\t<devanagari>"` entries, compiled
-//! at build time from `data/ne-words.tsv` (see `build.rs`) and included in the
-//! binary. A prefix scan for `"ghar"` walks every word whose key starts with it;
+//! at build time (see `build.rs`) from `data/ne-words.tsv` — generated, keys
+//! derived by inverting the Devanagari — plus `data/latin-keys-ne.tsv`, which is
+//! hand-written for the words that inversion cannot reach: English loanwords and
+//! place names, typed `computer` and `kathmandu` rather than as transliterations
+//! of कम्प्युटर and काठमाडौं. Both are included in the binary. A prefix scan for `"ghar"` walks every word whose key starts with it;
 //! the `\t` makes the exact-key subset trivially separable.
 
 use fst::automaton::Str;
@@ -228,6 +231,32 @@ mod tests {
     fn generated_verb_forms_are_reachable() {
         assert!(texts("laageko").iter().any(|t| t == "लागेको"));
         assert!(texts("bhayo").iter().any(|t| t == "भयो"));
+    }
+
+    #[test]
+    fn english_spellings_reach_loanwords() {
+        // The rule engine reads `computer` letter by letter into चोम्पुतेर,
+        // which is far enough from कम्प्युटर that no fuzzy pass could bridge
+        // it. Only a Latin key written by hand gets there.
+        for (typed, want) in [("computer", "कम्प्युटर"), ("college", "कलेज"), ("mask", "मास्क")] {
+            assert_eq!(texts(typed)[0], want, "{typed}: {:?}", texts(typed));
+        }
+    }
+
+    #[test]
+    fn place_names_use_their_settled_english_spelling() {
+        for (typed, want) in [("kathmandu", "काठमाडौं"), ("birgunj", "वीरगञ्ज")] {
+            assert_eq!(texts(typed)[0], want, "{typed}: {:?}", texts(typed));
+        }
+    }
+
+    #[test]
+    fn a_hand_written_key_does_not_displace_a_real_word() {
+        // बारा is a district and बर is a word; typing `bara` must still lead
+        // with the literal reading, because that reading is itself a word.
+        // Hand-written keys add candidates, they do not take the top slot.
+        assert_eq!(texts("bara")[0], "बर");
+        assert!(texts("bara").iter().any(|t| t == "बारा"));
     }
 
     #[test]

@@ -57,33 +57,36 @@ The rest — `core`, `inflect`, `loan`, `proper` — are vocabulary groups.
 
 ## Baseline
 
-As of the commit that added this crate:
-
 ```
-            cases    top-1    top-5     MRR     CER
-overall       148    62.8%    70.3%   0.664   0.177
-casual        131    58.0%    66.4%   0.621   0.202
-core           88    75.0%    83.0%   0.788   0.101
-inflect        22    72.7%    81.8%   0.773   0.060
-loan           16    25.0%    31.2%   0.281   0.553
-proper         22    31.8%    36.4%   0.341   0.281
-strict         17   100.0%   100.0%   1.000   0.000
+            cases    top-1    top-5     MRR     CER      (was, at introduction)
+overall       148    81.1%    87.2%   0.840   0.064      62.8% / 70.3% / 0.177
+casual        131    78.6%    85.5%   0.819   0.073      58.0% / 66.4% / 0.202
+core           88    75.0%    83.0%   0.788   0.101      unchanged
+inflect        22    72.7%    81.8%   0.773   0.060      unchanged
+loan           16   100.0%   100.0%   1.000   0.000      25.0% / 31.2% / 0.553
+proper         22   100.0%   100.0%   1.000   0.000      31.8% / 36.4% / 0.281
+strict         17   100.0%   100.0%   1.000   0.000      unchanged
 ```
 
-Read that as a map of where the work is, not as a verdict:
+**Read the `loan` and `proper` rows carefully.** They went to 100% because
+`xlit-dict/data/latin-keys-ne.tsv` now contains those words, keyed by the Latin
+people actually type. That is coverage, and coverage is what a dictionary layer
+*is* — but the rows no longer measure generalisation, because the set they are
+scored against is inside the list. What they are now is a tripwire: if they fall,
+the list has stopped being compiled in or stopped being consulted.
+
+For a word that is *not* in the list, nothing has changed: `hospital` still
+comes out होस्पितल and `sarangkot` सरन्ग्कोत. Growing the number means growing
+the list.
+
+The rest of the table is the honest part:
 
 - **The rule engine is exact** on everything spelled its way. Nothing to fix
-  there; the `strict` row is a tripwire for regressions.
-- **Loanwords and proper nouns are the hole**, at 25% and 32%. `computer` comes
-  out चोम्पुतेर, `kathmandu` कथ्मन्दु — the letter-by-letter reading of English
-  orthography, which no amount of ranking can repair because the right answer is
-  never generated in the first place. These need dictionary entries and, for
-  names, a Latin key to reach them by; the seed's own notes point at the same
-  fix.
+  there; the `strict` row is a regression tripwire.
 - **Core vocabulary at 75%** mostly fails by one character — `साठी` for `साथी`,
   `फुल` for `फूल` — where the fuzzy pass does find the word but ranks it second.
-  That is a ranking problem rather than a coverage one, and the cheaper half of
-  what is left.
+  A ranking problem rather than a coverage one, and the cheapest thing left.
+- **Inflected forms at 73%** are the same story one step along.
 
 `tests/accuracy.rs` holds floors a little under these numbers so a change cannot
 quietly cost more than it buys. They are a ratchet: when the numbers go up, the
