@@ -1,12 +1,12 @@
 [package]
-name = "xlit-cli"
+name = "xlit-daemon"
 version = "0.1.0"
-description = "Dev REPL for the transliteration engine: Latin in, ranked candidates out."
+description = "One process that owns the transliteration engine; frontends are thin IPC clients."
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "xlit"
+name = "xlit-daemon"
 path = "src/main.rs"
 
 [dependencies]

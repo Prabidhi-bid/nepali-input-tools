@@ -1,0 +1,20 @@
+[package]
+name = "xlit-ipc"
+version = "0.1.0"
+description = "Length-prefixed JSON protocol and transport between xlit frontends and the daemon."
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+]

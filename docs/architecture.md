@@ -103,14 +103,33 @@ learning; **+~10 MB** if the LM is enabled.
   (+40 if used in the last day)` to the matching candidate as `Source::Learned`.
 - Fully local. Never leaves the machine. CLI writes `./xlit-learn.json`.
 
-## Daemon + IPC (next)
+## Daemon + IPC (`xlit-daemon`, `xlit-ipc`) — done
 
-- `xlit-daemon`: owns the `Engine`, opens the mmap'd data once.
-- Transport: Unix domain socket (Linux) / named pipe (Windows).
-- Protocol: length-prefixed JSON, request/response.
-  - `{"op":"candidates","text":"namaste"}` → `{"candidates":[...]}`
+- `xlit-daemon` owns the `Engine` and the learning store and opens the mmap'd
+  data once; `xlit-ipc` is the protocol, the transport, and the `Client` both
+  ends share. `xlit --client` is the first client; see
+  [crates/xlit-daemon/README.md](../crates/xlit-daemon/README.md).
+- Transport: Unix domain socket (`$XDG_RUNTIME_DIR/xlit/xlit.sock`, mode 0700)
+  on Unix, named pipe (`\\.\pipe\xlit-daemon-$USERNAME`, creator's ACL) on
+  Windows. `$XLIT_SOCKET` overrides both. `Stream` is `Read + Write` on both
+  platforms, so the framing code is written once.
+- Protocol: length-prefixed JSON (`u32` LE length, then body, 1 MiB cap),
+  request/response, many pairs per connection so a frontend connects once.
+  - `{"op":"candidates","text":"namaste"}` → `{"ok":true,"candidates":[...]}`
   - `{"op":"commit","input":"namaste","chosen":"नमस्ते"}` → `{"ok":true}`
-- Frontends hold no state beyond the current composition buffer.
+  - also `transliterate`, `ping`, `shutdown`.
+- Errors are `{"ok":false,"error":"..."}`, never a dropped connection: losing
+  the daemon mid-word would cost the user their composition, so the daemon
+  answers even when it cannot help. `source` is a string, not an enum, so a new
+  ranking layer cannot break an older client.
+- A stale socket (daemon killed, not stopped) is detected by *connecting* — the
+  inode outlives the process, so existence proves nothing — and replaced. A
+  second daemon on a live endpoint refuses to start rather than take half the
+  connections.
+- Frontends hold no state beyond the current composition buffer. The Linux ones
+  still link the engine directly, which on Linux costs nothing: an IBus engine
+  is already one process per session. Windows is where the daemon earns its
+  keep.
 
 ## Frontends
 
@@ -132,9 +151,9 @@ the engine to `commit` for learning.
    `xlit-learn` JSON store, wired into the CLI (numbers commit picks).
    *Still open:* corpus-derived seed list, accuracy harness (top-1 / top-5 / CER
    against a held-out word list).
-3. **M3 — daemon**: `xlit-daemon` + IPC, CLI switches to client mode.
-4. **M4 — Linux IBus**: end-to-end typing in real apps on Linux.
-5. **M5 — Fcitx5**.
+3. **M3 — daemon** *(done)*: `xlit-daemon` + `xlit-ipc`, `xlit --client`.
+4. **M4 — Linux IBus** *(done)*: end-to-end typing in real apps on Linux.
+5. **M5 — Fcitx5** *(done)*.
 6. **M6 — Windows TSF** (`frontends/windows-tsf`, `xlit-tsf.dll`), staged:
    - **M6.1** *(done)*: registrable COM DLL — `regsvr32` writes the CLSID keys,
      the TSF profile via `ITfInputProcessorProfileMgr::RegisterProfile`
@@ -175,7 +194,8 @@ the engine to `commit` for learning.
      `Set-WinUserLanguageList`; uninstall fully reverses (incl. HKLM key
      force-delete + HKCU CTF sweep). Release DLL is stripped, trace behind a
      cargo feature. TODO: native ARM64.
-7. **M7 — packaging**: per-distro Linux packages, language packs.
+7. **M7 — packaging**: per-distro Linux packages, language packs. The daemon
+   ships a systemd user unit (`crates/xlit-daemon/dist/`) already.
 
 ## Dropped
 

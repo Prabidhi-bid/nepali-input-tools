@@ -31,12 +31,15 @@ even when it cannot know the spelling.
 - [x] Dev REPL (`xlit-cli`)
 - [x] Dictionary FST layer (`xlit-dict`) — exact / fuzzy / prefix, mmap-capable
 - [x] User-learning store (`xlit-learn`) — JSON-backed, boosts past picks
-- [~] Windows TSF frontend (`xlit-tsf`) — **types Nepali in real apps** as of
-      M6.2; candidate window is next
+- [x] Daemon + IPC (`xlit-daemon`, `xlit-ipc`) — Unix socket / named pipe,
+      length-prefixed JSON; `xlit --client` is a client of it
+      (see [crates/xlit-daemon/README.md](crates/xlit-daemon/README.md))
+- [x] Linux IBus frontend ([frontends/linux-ibus](frontends/linux-ibus/README.md))
+- [x] Linux Fcitx5 frontend ([frontends/linux-fcitx5](frontends/linux-fcitx5/README.md))
+- [~] Windows TSF frontend (`xlit-tsf`) — types Nepali in real apps with a
+      candidate window and an installer; ARM64 and the language-bar icon remain
       (see [frontends/windows-tsf/README.md](frontends/windows-tsf/README.md))
-- [ ] Daemon + IPC (named pipe / Unix socket)
-- [ ] Linux IBus frontend
-- [ ] Linux Fcitx5 frontend
+- [ ] Packaging: per-distro Linux packages, language packs
 
 See [docs/architecture.md](docs/architecture.md) for the full plan and milestones.
 
@@ -52,6 +55,16 @@ Then:
 
 ```bash
 cargo run -p xlit-cli -- namaste duniya
+```
+
+Or against the shared engine process, which is what the frontends talk to:
+
+```bash
+cargo run -p xlit-daemon
+```
+
+```bash
+cargo run -p xlit-cli -- --client namaste duniya
 ```
 
 ```bash

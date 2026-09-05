@@ -1,0 +1,20 @@
+[Unit]
+Description=xlit transliteration engine
+Documentation=https://github.com/prdpspkt/nepali-input-tools
+# Socket lives under $XDG_RUNTIME_DIR, which goes away at logout with the rest
+# of the session; there is nothing to clean up afterwards.
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/xlit-daemon
+Restart=on-failure
+RestartSec=2
+# The engine is memory-mapped data and a JSON file. Nothing else is needed.
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/xlit
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

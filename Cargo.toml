@@ -4,6 +4,8 @@ members = [
     "crates/xlit-core",
     "crates/xlit-dict",
     "crates/xlit-learn",
+    "crates/xlit-ipc",
+    "crates/xlit-daemon",
     "crates/xlit-cli",
     "crates/xlit-config",
     "crates/xlit-install",

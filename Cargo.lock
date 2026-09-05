@@ -1161,6 +1161,7 @@ version = "0.1.0"
 dependencies = [
  "xlit-core",
  "xlit-dict",
+ "xlit-ipc",
  "xlit-learn",
 ]
 
@@ -1180,6 +1181,16 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "toml",
+]
+
+[[package]]
+name = "xlit-daemon"
+version = "0.1.0"
+dependencies = [
+ "xlit-core",
+ "xlit-dict",
+ "xlit-ipc",
+ "xlit-learn",
 ]
 
 [[package]]
@@ -1218,6 +1229,15 @@ version = "0.1.0"
 dependencies = [
  "windows",
  "winreg",
+]
+
+[[package]]
+name = "xlit-ipc"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "windows",
 ]
 
 [[package]]
