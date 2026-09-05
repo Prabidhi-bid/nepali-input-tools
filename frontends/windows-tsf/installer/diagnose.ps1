@@ -76,7 +76,7 @@ foreach ($v in $views) {
         Bad "$($v.Name): registered but the file is missing - $dll"
     }
 }
-if (-not $anyDll) { Bad 'no bitness is registered - run install.ps1' }
+if (-not $anyDll) { Bad 'no bitness is registered - run xlit-install.exe' }
 
 # --- 2. TSF profile -----------------------------------------------------------
 Say ''

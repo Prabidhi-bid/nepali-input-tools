@@ -5,6 +5,9 @@ description = "Dictionary re-ranking layer: mmap'd FST of Devanagari words + fre
 edition.workspace = true
 license.workspace = true
 
+[build-dependencies]
+fst = "0.4"
+
 [dependencies]
 xlit-core = { path = "../xlit-core" }
 fst = "0.4"

@@ -2,18 +2,61 @@
 
 Two ways in:
 
-- **`xlit-tsf.iss` + `build-setup.ps1`** → a distributable **`Setup.exe`**
-  (Inno Setup). Give this to end users.
-- **`install.ps1` / `uninstall.ps1`** → plain PowerShell, no toolchain, for dev
-  boxes. Both self-elevate.
+- **`xlit-install.exe`** (`crates/xlit-install`) -> one self-contained
+  executable. Both DLLs and the word editor are compiled into it, so the machine
+  it runs on needs nothing else - no Rust, no scripts beside it, no
+  redistributable. Self-elevating. This is the normal way in.
+- **`xlit-tsf.iss` + `build-setup.ps1`** -> a distributable **`Setup.exe`**
+  (Inno Setup), if you want a wizard.
 
 ```
-powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\install.ps1
+cargo build -p xlit-tsf --target x86_64-pc-windows-msvc --release
+cargo build -p xlit-tsf --target i686-pc-windows-msvc --release
+cargo build -p xlit-config --release
+cargo build -p xlit-install --release      # embeds the three artifacts above
+target\release\xlit-install.exe
 ```
 
-Both do the same work (build x64 + x86, deregister → register each with the
-matching `regsvr32`, add the keyboard via `Set-WinUserLanguageList`); the
-`.iss` also gets an Apps & features entry and a wizard from Inno.
+Build order matters: `xlit-install`'s `build.rs` embeds whatever is in `target/`
+at the time it is compiled. It warns rather than fails when a payload is
+missing, so a stale installer is possible - rebuild it last, every time.
+
+Uninstall with `xlit-install.exe --uninstall`, or from Apps & features.
+
+## What `xlit-install.exe` does
+
+1. Elevates (the COM keys and the TSF profile live in HKLM).
+2. Writes both DLLs, the word editor and a copy of itself to
+   `%ProgramFiles%\Prabidhi.bid Input\`. A file still mapped by a running
+   process is renamed to `<name>.<timestamp>.old` and a fresh one written; the
+   stale copy unloads on the next sign-out and is swept by the next install.
+3. Registers the 64-bit DLL by calling its own `DllRegisterServer` - the call
+   that writes the COM CLSID keys and, via
+   `ITfInputProcessorProfileMgr::RegisterProfile`, the
+   `HKLM\SOFTWARE\Microsoft\CTF\TIP` profile plus the `TIPCAP_*` categories.
+4. Writes the **32-bit** CLSID keys straight into the WOW6432Node view.
+   Deliberately *not* a second `DllRegisterServer`: the TSF profile and the
+   categories are machine-wide and bitness-independent, so step 3 already did
+   them, and all the 32-bit side needs is its own `InprocServer32`. Doing it
+   this way means the installer never has to load the 32-bit DLL - which a
+   64-bit process cannot do anyway, and which is why the old script had to shell
+   out to the SysWOW64 `regsvr32`.
+5. Back in the user's own (unelevated) session, adds the keyboard to the
+   language list with `InstallLayoutOrTip`. This is per-user: written from the
+   elevated half it lands in the *administrator's* profile and the keyboard
+   silently never appears.
+6. Restarts `ctfmon` / `TextInputHost` so the switcher refreshes.
+7. Adds an **Apps & features** entry whose uninstall command is the installed
+   copy of the installer with `--uninstall`.
+
+### Why not `regsvr32`
+
+`regsvr32` is a GUI-subsystem program: it cannot write to a console, so a
+failure arrives as a bare exit code with the underlying Win32 error discarded.
+A 32-bit DLL that would not load reported `3` and nothing else. The installer
+makes the same three calls itself - `LoadLibraryEx`, `GetProcAddress`,
+`DllRegisterServer` - and reports the actual error, so *"a DLL it depends on is
+missing (126)"* replaces *"3"*.
 
 ## Build `Setup.exe`
 
@@ -29,35 +72,11 @@ Options: `-Version 0.2.0`, `-Configuration debug`, `-SkipX86`,
 auto-detection misses it — it also checks Inno's registry install location and
 the usual folders). `xlit-tsf.iss` registers per bitness (`System32` regsvr32
 for the native DLL, `SysWOW64` for the x86 one), writes the keyboard from a
-`runascurrentuser` step, and on uninstall runs the same reversal as
-`uninstall.ps1` (language list, `regsvr32 /u`, an HKLM key force-delete
-fallback, an HKCU CTF sweep) plus Inno's own file/ARP removal. Keep `AppId`
+`runascurrentuser` step, and on uninstall reverses it (language list, `regsvr32 /u`, an HKLM key
+force-delete fallback, an HKCU CTF sweep) plus Inno's own file/ARP removal. Keep `AppId`
 stable across releases.
 
-## What `install.ps1` does (elevated)
-
-1. `cargo build -p xlit-tsf --release` for `x86_64-` **and** `i686-pc-windows-msvc`
-   (`rustup target add` is attempted for you). An i686 failure is a warning, not
-   fatal — you get an x64-only result. Flags: `-NoBuild`, `-SkipX86`,
-   `-Configuration debug`.
-2. Copy each DLL to its slot + `uninstall.ps1` to the install root.
-3. Per bitness: `regsvr32 /s /u` then `/s` — a clean deregister → register.
-   `System32\regsvr32.exe` for the native DLL, `SysWOW64\regsvr32.exe` for the
-   x86 one. `DllRegisterServer` writes the COM CLSID keys and, via
-   `ITfInputProcessorProfileMgr::RegisterProfile`, the
-   `HKLM\SOFTWARE\Microsoft\CTF\TIP` profile (enabled-by-default) + the
-   `TIPCAP_*` categories.
-4. `Set-WinUserLanguageList` — add `ne-NP` + this TIP to your language list, so
-   it shows in the taskbar / `Win+Space` switcher without a Settings visit.
-5. Add an **Apps & features** entry (`…\Uninstall\PrabidhibidInput`) whose
-   uninstall command runs the copied `uninstall.ps1`.
-6. Restart `ctfmon` / `TextInputHost` so the switcher refreshes.
-
-A DLL still mapped by a running process (the Claude app, a console) is renamed
-to `xlit_tsf.dll.<timestamp>.old` and a fresh one is written; the stale copy
-unloads on the next sign-out.
-
-After installing it should already be in `Win+Space` — sign out / in if not.
+After installing it should already be in `Win+Space` - sign out / in if not.
 
 ## Why two DLLs
 
@@ -78,7 +97,7 @@ x64 + x86 run under emulation; no native ARM64 build.
 Apps & features → *Input by Prabidhi.bid* → Uninstall, or:
 
 ```
-powershell -ExecutionPolicy Bypass -File "%ProgramFiles%\Prabidhi.bid Input\uninstall.ps1"
+"%ProgramFiles%\Prabidhi.bid Input\xlit-install.exe" --uninstall
 ```
 
 Completely reverses the install, in order:

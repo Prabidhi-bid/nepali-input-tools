@@ -7,9 +7,11 @@
 //! engine, replace the text. There is never a mapping to maintain between Latin
 //! characters and the Devanagari they produced.
 //!
-//! The composition shows the *converted* top candidate, not the raw Latin, so
-//! `namaste` reads नमस्ते as it is typed. The raw Latin is still what the engine
-//! is keyed on, and Esc puts it back.
+//! The composition shows the **raw Latin**, exactly as typed. Showing the top
+//! candidate there instead meant a dictionary guess appeared under the caret
+//! and changed with every keystroke — text the user never typed, moving while
+//! they typed. Conversion happens once, at commit, using the candidate the
+//! popup has highlighted; the popup is where alternatives are seen and chosen.
 //!
 //! All document access happens inside [`crate::editsession`] closures. Every
 //! entry point here borrows the shared state only briefly and always drops that
@@ -80,10 +82,16 @@ impl Session {
         self.comp.is_some() || !self.buf.is_empty()
     }
 
-    /// Text the composition should currently display: the highlighted
-    /// candidate, or the raw Latin before the engine has said anything.
+    /// What commit would write: the highlighted candidate, or the raw Latin
+    /// before the engine has said anything.
     pub fn preview(&self) -> String {
         self.cands.get(self.sel).cloned().unwrap_or_else(|| self.buf.clone())
+    }
+
+    /// Text the composition displays while the word is in progress — the raw
+    /// Latin, never a candidate. See the module comment.
+    pub fn display(&self) -> String {
+        self.buf.clone()
     }
 
     /// Drop all word state. Used when the composition is gone (committed,
@@ -236,7 +244,7 @@ fn render(sess: &SharedSession, ctx: &ITfContext, tid: u32) -> bool {
         open_composition(&s2, ec, ctx)?;
         let (text, comp) = {
             let s = s2.borrow();
-            (s.preview(), s.comp.clone())
+            (s.display(), s.comp.clone())
         };
         let Some(comp) = comp else { return Ok(()) };
         let range = unsafe { comp.GetRange()? };

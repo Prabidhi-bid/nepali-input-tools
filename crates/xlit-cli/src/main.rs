@@ -9,14 +9,16 @@ use std::io::{self, BufRead, Write};
 use std::sync::Arc;
 
 use xlit_core::{Candidate, Engine, Ranker};
-use xlit_dict::DictRanker;
+use xlit_dict::{DictRanker, WordList};
 use xlit_learn::LearnStore;
 
 fn main() {
     let one_shot: Vec<String> = std::env::args().skip(1).collect();
 
     if !one_shot.is_empty() {
-        let engine = Engine::nepali().with_ranker(Box::new(DictRanker::builtin()));
+        let engine = Engine::nepali()
+            .with_ranker(Box::new(DictRanker::builtin()))
+            .with_ranker(Box::new(WordList::new()));
         print_list(&engine.candidates(&one_shot.join(" ")));
         return;
     }
@@ -28,6 +30,7 @@ fn main() {
 
     let engine = Engine::nepali()
         .with_ranker(Box::new(DictRanker::builtin()))
+        .with_ranker(Box::new(WordList::new()))
         .with_ranker(Box::new(SharedLearn(store.clone())));
 
     eprintln!(

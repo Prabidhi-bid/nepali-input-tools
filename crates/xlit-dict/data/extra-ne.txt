@@ -1,0 +1,41 @@
+# Words to add on top of the nep_dict source, one per line, Devanagari only.
+#
+# The source dictionary is a lexicon rather than a word list, so it is missing
+# things a typist needs — proper nouns (नेपाल is not in it), and ordinary words
+# it simply skipped. Adding them here rather than editing the generated files
+# means they survive the next `python tools/mkwords.py`.
+#
+# Latin keys are derived by the same schema inversion as everything else, and
+# -नु verbs get their inflections generated, so an entry here behaves exactly
+# like one that came from the source.
+
+टाढा
+ढाल्नु
+
+# Very common words the source lexicon omits. गर्नु is the commonest verb in
+# the language; the proper nouns were never going to be in a dictionary.
+गर्नु
+सक्नु
+नेपाल
+काठमाडौं
+भारत
+चीन
+उनी
+तपाईं
+त्यो
+अहिले
+अघि
+सधैं
+तर
+वा
+कि
+नराम्रो
+ठूलो
+नयाँ
+धेरै
+
+# Pronoun forms and verbs the source omits.
+मैले
+उ
+चल्नु
+मलाई

@@ -6,6 +6,7 @@ members = [
     "crates/xlit-learn",
     "crates/xlit-cli",
     "crates/xlit-config",
+    "crates/xlit-install",
     "frontends/windows-tsf",
 ]
 

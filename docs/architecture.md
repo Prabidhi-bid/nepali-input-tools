@@ -166,8 +166,9 @@ the engine to `commit` for learning.
    - **M6.4**: language-bar icon, Chrome/Electron/UWP fixes. The Ctrl+Space
      passthrough toggle landed early, with M6.2.
    - **M6.5** *(initial)*: `installer/` — `xlit-tsf.iss` + `build-setup.ps1`
-     produce a distributable Inno Setup `Setup.exe`; `install.ps1` /
-     `uninstall.ps1` are the toolchain-free path. Both build **x64 + x86**
+     produce a distributable Inno Setup `Setup.exe`; `crates/xlit-install`
+     builds a self-contained `xlit-install.exe` with both DLLs embedded, which
+     registers through the TSF APIs rather than `regsvr32`. Both cover **x64 + x86**
      (`--target x86_64-` / `i686-pc-windows-msvc`), lay them out as
      `{app}\xlit_tsf.dll` + `{app}\x86\xlit_tsf.dll`, deregister→register each
      with the matching-bitness `regsvr32`, and add the keyboard with

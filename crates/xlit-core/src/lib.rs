@@ -21,6 +21,11 @@ pub enum Source {
     Rule,
     /// A dictionary word that matches / completes the input.
     Dictionary,
+    /// A dictionary word the *typed input itself* resolves to exactly — not a
+    /// completion and not a guess. Ranked apart from [`Source::Dictionary`]
+    /// because it is the one case where a dictionary word may outrank the
+    /// literal transliteration: see [`Engine::candidates`].
+    Confirmed,
     /// Boosted because the user has picked it before.
     Learned,
     /// Neural fallback for out-of-vocabulary input.
@@ -96,13 +101,43 @@ impl Engine {
     }
 
     /// Ranked candidates for a raw Latin buffer, best first.
+    ///
+    /// Order is deliberately predictable rather than clever:
+    ///
+    /// 1. the literal transliteration of exactly what was typed — unless it is
+    ///    not a word and the dictionary resolves the typed input exactly, in
+    ///    which case that word leads and the literal follows it;
+    /// 2. anything the user has picked before for this same input;
+    /// 3. whichever of the two did not lead;
+    /// 4. words that *extend* the literal — completions and inflected forms —
+    ///    alphabetically;
+    /// 5. everything else — fuzzy corrections and orthographic variants —
+    ///    alphabetically;
+    /// 6. the raw Latin, last.
+    ///
+    /// The exception in (1) is narrow on purpose. `jindagi` transliterates to
+    /// जिन्दगि, which is not a word; जिन्दगी is, and is what the typed letters
+    /// resolve to. Leading with the non-word meant pressing space produced a
+    /// misspelling. It does not fire when the literal is itself a word (`kaam`
+    /// stays काम) or when nothing resolves exactly (`ne` stays ने), so the
+    /// predictability that matters is untouched.
+    ///
+    /// The layer scores decide only *whether* a word is offered at all, never
+    /// where it lands. Score order let the dictionary put a different word in
+    /// front of the one being typed, and shuffled the list on every keystroke
+    /// as frequencies changed; alphabetical order means a word sits in the same
+    /// place every time, and the split at (3)/(4) keeps continuations of what
+    /// is actually on screen ahead of guesses at what was meant instead.
     pub fn candidates(&self, input: &str) -> Vec<Candidate> {
         let mut cands = Vec::new();
 
         // Primary literal transliteration at 100; orthographic variants (e.g.
         // the de-geminated form of a loanword) just below it, so they only
         // surface when a later layer — the dictionary — confirms them as words.
-        for (rank, t) in self.rule.transliterate_variants(input).into_iter().enumerate() {
+        let variants = self.rule.transliterate_variants(input);
+        // The literal reading of what was typed: pinned to the top below.
+        let literal = variants.first().cloned().unwrap_or_default();
+        for (rank, t) in variants.into_iter().enumerate() {
             if !t.is_empty() && t != input {
                 let score = if rank == 0 { 100 } else { 96 };
                 merge_candidate(&mut cands, t, score, Source::Rule);
@@ -131,7 +166,53 @@ impl Engine {
             }
             merged.push(c);
         }
-        merged.sort_by(|a, b| b.score.cmp(&a.score));
+        // Does the dictionary resolve the typed input to a word other than the
+        // literal reading? If so — and the literal is not itself a word — that
+        // word leads and the literal takes second place.
+        let literal_is_word = merged
+            .iter()
+            .any(|c| c.source == Source::Confirmed && c.text == literal);
+        let demote_literal = !literal.is_empty()
+            && !literal_is_word
+            && merged.iter().any(|c| c.source == Source::Confirmed);
+
+        // Group, then alphabetically within the group. "Alphabetical" is
+        // Devanagari code point order, which is the order these words appear in
+        // a Nepali dictionary.
+        let group = |c: &Candidate| -> u8 {
+            let is_literal = !literal.is_empty() && c.text == literal;
+            match c.source {
+                Source::Raw => 5,
+                Source::Learned => 1,
+                _ if is_literal => {
+                    if demote_literal {
+                        2
+                    } else {
+                        0
+                    }
+                }
+                Source::Confirmed => {
+                    if demote_literal {
+                        0
+                    } else {
+                        2
+                    }
+                }
+                _ if !literal.is_empty() && c.text.starts_with(literal.as_str()) => 3,
+                _ => 4,
+            }
+        };
+        merged.sort_by(|a, b| {
+            group(a)
+                .cmp(&group(b))
+                // Learned entries are the one place the score still orders
+                // anything: it encodes how often the user picked that word.
+                .then_with(|| match group(a) {
+                    1 => b.score.cmp(&a.score),
+                    _ => std::cmp::Ordering::Equal,
+                })
+                .then_with(|| a.text.cmp(&b.text))
+        });
         merged
     }
 }

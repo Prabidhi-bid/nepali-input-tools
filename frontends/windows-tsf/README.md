@@ -48,18 +48,23 @@ Output: `target\release\xlit_tsf.dll` (x64).
 - **`Setup.exe`** — `powershell -File installer\build-setup.ps1` (needs
   `winget install JRSoftware.InnoSetup`) → a distributable
   `installer\Input-by-Prabidhi.bid-<ver>-setup.exe`.
-- **`installer\install.ps1`** — self-elevating, no toolchain:
+- **`xlit-install.exe`** — one self-contained executable with both DLLs and the
+  word editor compiled into it; nothing else needed on the target machine.
+  Self-elevating. Build it *last*, so it embeds current artifacts:
 
 ```
-powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\install.ps1
+cargo build -p xlit-tsf --target x86_64-pc-windows-msvc --release
+cargo build -p xlit-tsf --target i686-pc-windows-msvc --release
+cargo build -p xlit-config --release
+cargo build -p xlit-install --release
+target\release\xlit-install.exe
 ```
 
-Either builds x64 + x86, deregisters any prior copy, registers both DLLs,
-**adds the Nepali keyboard to your language list**, and recycles the input hosts
-— so **Input by Prabidhi.bid** should already be in the taskbar / Win+Space
-switcher (sign out / in if not). `-SkipX86` for a faster x64-only run;
-[`uninstall.ps1`](installer/uninstall.ps1) / the Setup.exe uninstaller reverse
-it. See [`installer/README.md`](installer/README.md).
+Either deregisters any prior copy, registers both DLLs, **adds the Nepali
+keyboard to your language list**, and recycles the input hosts — so **Input by
+Prabidhi.bid** should already be in the taskbar / Win+Space switcher (sign out /
+in if not). `xlit-install.exe --uninstall` (or Apps & features) reverses it.
+See [`installer/README.md`](installer/README.md).
 
 **Manual (dev, register only):** PowerShell / cmd **as Administrator**:
 
@@ -104,13 +109,14 @@ Remove the Nepali keyboard from Settings afterwards if you don't want it.
 ## Dev rebuild loop
 
 Once the service is registered, Windows keeps `xlit_tsf.dll` loaded, so a plain
-`cargo build` fails with *"unable to delete existing file"*. `install.ps1`
-handles that (it deregisters, recycles the input hosts, and renames a still-
-mapped DLL aside before rebuilding), so re-run it after each change —
-`-SkipX86` keeps it to a single x64 build:
+`cargo build` fails with *"unable to delete existing file"*. The installer
+handles that — it deregisters, recycles the input hosts, and renames a still-
+mapped DLL aside — so rebuild and re-run it after each change:
 
 ```
-powershell -ExecutionPolicy Bypass -File frontends\windows-tsf\installer\install.ps1 -SkipX86
+cargo build -p xlit-tsf --target x86_64-pc-windows-msvc --release
+cargo build -p xlit-install --release
+target\release\xlit-install.exe
 ```
 
 The stale mapped copy in apps you can't close (the Claude app, a console)
@@ -119,9 +125,9 @@ swept on the next run.
 
 ## Troubleshooting: not in the taskbar switcher
 
-- The switcher reads **your language list**, not the registry. `install.ps1`
-  adds `ne-NP` + this TIP with `Set-WinUserLanguageList`; if you registered by
-  hand with `regsvr32`, add the keyboard yourself in Settings.
+- The switcher reads **your language list**, not the registry. The installer
+  adds this TIP with `InstallLayoutOrTip`; if you registered by hand with
+  `regsvr32`, add the keyboard yourself in Settings.
 - `DllRegisterServer` uses `ITfInputProcessorProfileMgr::RegisterProfile`
   (enabled-by-default, machine-wide/HKLM) plus the `IMMERSIVESUPPORT` /
   `SYSTRAYSUPPORT` categories and does **not** claim `COMLESS`. An install from
@@ -167,7 +173,7 @@ switching to the input method.
 - **Ctrl+Space does nothing.** Another text service already reserved the chord;
   the trace log says `toggle key unavailable`. Nothing else breaks.
 - **A 32-bit app types Latin while 64-bit apps work** (or vice versa): only one
-  bitness is registered. Re-run `install.ps1` without `-SkipX86`.
+  bitness is registered. Re-run `xlit-install.exe`.
 
 ## Notes
 

@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use xlit_core::{Candidate, Engine, Ranker};
-use xlit_dict::DictRanker;
+use xlit_dict::{DictRanker, WordList};
 use xlit_learn::LearnStore;
 
 /// Most candidates we ever hand to the UI (the candidate window selects with
@@ -57,7 +57,13 @@ fn shared() -> &'static Shared {
         // built-in dictionary, then the downloaded one, then the user's own
         // picks last and highest. A word the user added by hand outranks
         // anything the server sent, which outranks the compiled-in seed.
-        let mut engine = Engine::nepali().with_ranker(Box::new(DictRanker::builtin()));
+        // DictRanker is keyed on Devanagari and validates what the rule engine
+        // produced; WordList is keyed on the Latin actually typed, which is what
+        // makes completions possible mid-word. They answer different questions,
+        // so both run.
+        let mut engine = Engine::nepali()
+            .with_ranker(Box::new(DictRanker::builtin()))
+            .with_ranker(Box::new(WordList::new()));
         match LearnStore::open(shared_path()) {
             Ok(s) if !s.is_empty() => {
                 crate::debug(&format!("shared dictionary: {} words", s.len()));

@@ -33,6 +33,9 @@ use memmap2::Mmap;
 
 use xlit_core::{merge_candidate, Candidate, Ranker, Source};
 
+mod words;
+pub use words::WordList;
+
 const SEED_TSV: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/seed/ne.tsv"));
 
 /// Nepali postpositions and case markers, most frequent first.
@@ -151,6 +154,26 @@ impl<D: AsRef<[u8]>> DictRanker<D> {
         hits.truncate(limit);
         hits
     }
+}
+
+/// Whether a word is the kind that takes a postposition.
+///
+/// Postpositions attach to nominals, not to conjugated verbs: कामको is a word,
+/// भयोको is not. The dictionary holds both kinds and says nothing about which
+/// is which, so this reads the ending — the verbal ones are a short, closed set
+/// (infinitive नु, past यो, participle एको/ेको, present छ, progressive दै,
+/// conditional दा). Nouns in े such as मान्छे are deliberately not excluded,
+/// because मान्छेको is perfectly good.
+fn takes_postpositions(word: &str) -> bool {
+    const VERBAL_ENDINGS: &[&str] = &[
+        "\u{0928}\u{0941}",         // नु   infinitive
+        "\u{092F}\u{094B}",         // यो   3sg past
+        "\u{0947}\u{0915}\u{094B}", // एको / ेको  perfective participle
+        "\u{091B}",                 // छ    present
+        "\u{0926}\u{0948}",         // दै   progressive
+        "\u{0926}\u{093E}",         // दा   conditional
+    ];
+    !VERBAL_ENDINGS.iter().any(|e| word.ends_with(e))
 }
 
 /// Frequency → small additive bonus (log-scaled, capped).
@@ -278,7 +301,7 @@ impl<D: AsRef<[u8]> + Send + Sync> Ranker for DictRanker<D> {
                     &mut cands,
                     word.clone(),
                     300 + freq_bonus(freq),
-                    Source::Dictionary,
+                    Source::Confirmed,
                 );
             }
 
@@ -316,7 +339,7 @@ impl<D: AsRef<[u8]> + Send + Sync> Ranker for DictRanker<D> {
             // — suffixing a guess would just multiply the guess. Scored below
             // the exact hit and in postposition-frequency order, so `kaam`
             // reads काम, कामको, कामले, ...
-            if is_a_word {
+            if is_a_word && takes_postpositions(&word) {
                 for (i, suffix) in SUFFIXES.iter().take(self.opts.max_suffixes).enumerate() {
                     merge_candidate(
                         &mut cands,
@@ -353,6 +376,26 @@ mod tests {
         Engine::nepali().with_ranker(Box::new(DictRanker::builtin()))
     }
 
+    /// The candidate list as plain strings.
+    fn texts(input: &str) -> Vec<String> {
+        engine().candidates(input).iter().map(|c| c.text.clone()).collect()
+    }
+
+    /// Assert `want` is offered for `input` and sits directly behind the literal
+    /// transliteration, which `Engine::candidates` pins to the top by design.
+    fn best_suggestion(input: &str, want: &str) {
+        let got = texts(input);
+        assert_eq!(got.get(1).map(String::as_str), Some(want), "{input} gave {got:?}");
+    }
+
+    /// Assert `want` *leads* for `input`. This is the narrow exception to
+    /// literal-first: the literal is not a word, and the dictionary resolves the
+    /// input exactly, so leading with the literal would put a non-word on top.
+    fn leads(input: &str, want: &str) {
+        let got = texts(input);
+        assert_eq!(got.first().map(String::as_str), Some(want), "{input} gave {got:?}");
+    }
+
     #[test]
     fn seed_loads() {
         assert!(DictRanker::builtin().len() > 50);
@@ -362,13 +405,17 @@ mod tests {
     fn exact_word_is_validated() {
         let top = &engine().candidates("nepaal")[0];
         assert_eq!(top.text, "नेपाल");
-        assert_eq!(top.source, Source::Dictionary);
+        assert_eq!(top.source, Source::Confirmed);
     }
 
     #[test]
     fn fuzzy_fixes_vowel_length() {
-        // rule engine gives नेपालि (literal short i); dict corrects to नेपाली
-        assert_eq!(engine().candidates("nepaali")[0].text, "नेपाली");
+        // rule engine gives नेपालि (literal short i), which stays pinned first;
+        // the dictionary's correction नेपाली is offered right behind it.
+        let c = engine().candidates("nepaali");
+        assert_eq!(c[0].text, "नेपालि");
+        let texts: Vec<_> = c.iter().map(|x| x.text.as_str()).collect();
+        assert!(texts.contains(&"नेपाली"), "got {texts:?}");
     }
 
     #[test]
@@ -416,7 +463,7 @@ mod tests {
     fn dental_retroflex_is_still_corrected() {
         // The other half of the trade: t/T is a real ambiguity in romanised
         // Nepali, and English loanwords take the retroflex.
-        assert_eq!(engine().candidates("kriket")[0].text, "क्रिकेट");
+        best_suggestion("kriket", "क्रिकेट");
     }
 
     #[test]
@@ -439,6 +486,19 @@ mod tests {
         for want in ["कामको", "कामले"] {
             assert!(texts.iter().any(|t| t == want), "missing {want} in {texts:?}");
         }
+    }
+
+    #[test]
+    fn verbs_do_not_take_postpositions() {
+        // भयो is a high-frequency seed word, but भयोको is not a word: the
+        // postposition pass must read the ending and leave conjugated verbs be.
+        assert!(takes_postpositions("काम"));
+        assert!(takes_postpositions("मान्छे"), "मान्छेको is a real word");
+        for verb in ["भयो", "लागेको", "हुन्छ", "लाग्नु", "लाग्दै", "लाग्दा"] {
+            assert!(!takes_postpositions(verb), "{verb} should not be inflected");
+        }
+        let got: Vec<String> = engine().candidates("bhayo").iter().map(|c| c.text.clone()).collect();
+        assert!(!got.iter().any(|t| t.starts_with("भयोक")), "got {got:?}");
     }
 
     #[test]
@@ -466,19 +526,16 @@ mod tests {
     #[test]
     fn loanword_degeminated_variant_wins() {
         // rule engine: "hello" -> हेल्लो (literal) + हेलो (de-geminated variant);
-        // हेलो is a seed loanword, so the dictionary promotes it to the top.
-        let c = engine().candidates("hello");
-        assert_eq!(c[0].text, "हेलो");
-        assert_eq!(c[0].source, Source::Dictionary);
+        // हेलो is a seed loanword, so the dictionary promotes it above the other
+        // suggestions - though the literal itself still comes first.
+        leads("hello", "हेलो");
     }
 
     #[test]
     fn different_consonant_conjunct_survives() {
         // क्र is two distinct consonants — the de-gemination pass must not touch
-        // it, and the exact seed spelling क्रिकेट should come back on top.
-        let c = engine().candidates("kriket");
-        assert_eq!(c[0].text, "क्रिकेट");
-        assert_eq!(c[0].source, Source::Dictionary);
+        // it, and the exact seed spelling क्रिकेट should be the first suggestion.
+        best_suggestion("kriket", "क्रिकेट");
     }
 
     #[test]
@@ -493,19 +550,15 @@ mod tests {
     #[test]
     fn hindi_style_name_normalizes_to_nepali() {
         // "raviiMdranaath" -> रवींद्रनाथ literally; the nasal-conjunct variant
-        // रवीन्द्रनाथ is a seed proper noun, so it wins.
-        let c = engine().candidates("raviiMdranaath");
-        assert_eq!(c[0].text, "रवीन्द्रनाथ");
-        assert_eq!(c[0].source, Source::Dictionary);
+        // रवीन्द्रनाथ is a seed proper noun, so it is the first suggestion behind it.
+        leads("raviiMdranaath", "रवीन्द्रनाथ");
     }
 
     #[test]
     fn anusvara_loanword_normalizes_to_nepali_spelling() {
         // "aMgrejii" -> अंग्रेजी literally; Nepali अङ्ग्रेजी (ङ् conjunct) is the
-        // seed spelling and should come out on top.
-        let c = engine().candidates("aMgrejii");
-        assert_eq!(c[0].text, "अङ्ग्रेजी");
-        assert_eq!(c[0].source, Source::Dictionary);
+        // seed spelling and should be the first suggestion behind the literal.
+        leads("aMgrejii", "अङ्ग्रेजी");
     }
 
     #[test]
