@@ -1,0 +1,38 @@
+Source: xlit
+Section: utils
+Priority: optional
+Maintainer: Prabidhi.bid <prdpspkt@gmail.com>
+Build-Depends: debhelper-compat (= 13),
+               cargo,
+               rustc (>= 1.75),
+               cmake,
+               libfcitx5core-dev,
+               libfcitx5utils-dev,
+               extra-cmake-modules
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Homepage: https://github.com/Prabidhi-bid/nepali-input-tools
+
+Package: xlit-common
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Nepali transliteration engine
+ Type Nepali phonetically in Latin letters and get Devanagari: namaste
+ becomes नमस्ते. This package holds the shared pieces — the xlit command
+ line tool and xlit-daemon, which serves candidates to the input method
+ frontends. Install xlit-ibus or xlit-fcitx5 to type with it.
+
+Package: xlit-ibus
+Architecture: any
+Depends: xlit-common (= ${binary:Version}), ibus, ${shlibs:Depends}, ${misc:Depends}
+Description: Nepali transliteration input method for IBus
+ An IBus engine for Nepali phonetic input: type namaste, get नमस्ते, with
+ a candidate list for the spellings the sounds leave open. IBus is the
+ input framework GNOME and most distributions use by default.
+
+Package: xlit-fcitx5
+Architecture: any
+Depends: xlit-common (= ${binary:Version}), fcitx5, ${shlibs:Depends}, ${misc:Depends}
+Description: Nepali transliteration input method for Fcitx5
+ A Fcitx5 addon for Nepali phonetic input: type namaste, get नमस्ते. Fcitx5
+ is the input framework KDE Plasma uses by default.

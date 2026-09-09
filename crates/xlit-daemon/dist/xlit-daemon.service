@@ -1,6 +1,6 @@
 [Unit]
 Description=xlit transliteration engine
-Documentation=https://github.com/prdpspkt/nepali-input-tools
+Documentation=https://github.com/Prabidhi-bid/nepali-input-tools
 # Socket lives under $XDG_RUNTIME_DIR, which goes away at logout with the rest
 # of the session; there is nothing to clean up afterwards.
 

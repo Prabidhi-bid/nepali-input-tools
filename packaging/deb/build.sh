@@ -26,6 +26,20 @@ maintainer="Prabidhi.bid <prdpspkt@gmail.com>"
 build=yes
 [ "${1:-}" = "--no-build" ] && build=no
 
+# Ubuntu 25.10 and later refuse to install a .deb from the desktop when it
+# carries no signature: "the package does not contain a publisher's name".
+# Set XLIT_SIGN_KEY to a GPG key id (or an email that selects one) and every
+# package built here is signed with it — see packaging/deb/sign.sh, which also
+# installs the debsig policy that makes the signature verifiable locally.
+# Canonical's own key cannot be used; only Canonical holds it.
+sign_key=${XLIT_SIGN_KEY:-}
+if [ -n "$sign_key" ]; then
+    command -v debsigs >/dev/null || {
+        echo "XLIT_SIGN_KEY is set but debsigs is missing (apt install debsigs)"
+        exit 1
+    }
+fi
+
 command -v dpkg-deb >/dev/null || { echo "dpkg-deb not found (apt install dpkg-dev)"; exit 1; }
 
 if [ "$build" = yes ]; then
@@ -63,10 +77,17 @@ Maintainer: $maintainer
 Installed-Size: $installed
 Description: $*
 CONTROL
-    dpkg-deb --build --root-owner-group "$stagedir" \
-        "$out/${pkg}_${version}_${arch}.deb" >/dev/null
+    deb="$out/${pkg}_${version}_${arch}.deb"
+    dpkg-deb --build --root-owner-group "$stagedir" "$deb" >/dev/null
     rm -rf "$stagedir"
-    echo "  $out/${pkg}_${version}_${arch}.deb"
+    # An `origin` signature is the one debsig-verify looks for when the archive
+    # itself, rather than a repository, is what has to vouch for the files.
+    if [ -n "$sign_key" ]; then
+        debsigs --sign=origin --default-key="$sign_key" "$deb"
+        echo "  $deb (signed by $sign_key)"
+    else
+        echo "  $deb"
+    fi
 }
 
 echo "==> packages"
@@ -99,3 +120,4 @@ fi
 
 echo
 echo "install with: sudo apt install $out/*.deb"
+[ -n "$sign_key" ] || echo "unsigned; see packaging/deb/sign.sh to sign for desktop installs"

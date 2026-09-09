@@ -1,0 +1,16 @@
+[Unit]
+Description=Add the xlit Nepali input source on first login
+Documentation=https://github.com/Prabidhi-bid/nepali-input-tools
+# gsettings needs the session bus. Wanted by default.target rather than
+# graphical-session.target, which not every desktop reliably starts; the script
+# checks for a GNOME session itself and does nothing outside one.
+After=dbus.socket
+ConditionPathExists=!%S/xlit/input-source-added
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/xlit-ibus-register
+RemainAfterExit=no
+
+[Install]
+WantedBy=default.target

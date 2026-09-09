@@ -37,6 +37,85 @@ already in `target/release`.
 `xlit-fcitx5` is skipped when the Fcitx5 development files are missing; the
 script says so rather than failing.
 
+### Signing (Ubuntu 25.10 and later)
+
+`sudo apt install ./*.deb` installs an unsigned package fine. Double-clicking
+one does not: since 25.10 the desktop installer rejects it with *"the package
+does not contain a publisher's name"*, because nothing in an unsigned archive
+says who built it.
+
+There is no way to sign as Ubuntu — Canonical's key signs Canonical's archive
+and nobody else has it. What is possible is signing as *us*, which satisfies
+`debsig-verify` on any machine that has been given our public key:
+
+```bash
+sudo apt install debsigs debsig-verify
+```
+
+```bash
+packaging/deb/sign.sh --policy 'prdpspkt@gmail.com'
+```
+
+(without `sudo`, drop `--policy`: the packages are still signed, but this
+machine has no policy to check them against). `build.sh` signs as it builds
+when `XLIT_SIGN_KEY` is set to the same key.
+
+A signature from a key the user has never seen still is not a *publisher* to
+the desktop installer. For that, packages need to come from an apt repository
+whose key the user has added — a PPA is the least work — and the terminal
+install above remains the answer for everyone else.
+
+## Ubuntu PPA
+
+The answer to both problems a loose `.deb` has: no publisher the desktop
+installer recognises, and `apt install ./xlit-ibus.deb` failing on
+`Depends: xlit-common` because that name exists in no archive. A repository
+fixes both — Launchpad signs it, and apt resolves the dependency from it.
+
+```bash
+sudo apt install devscripts dput debhelper cargo
+```
+
+```bash
+packaging/ppa/build.sh ppa:prdpspkt/xlit noble plucky resolute
+```
+
+That builds one signed *source* package per series into `packaging/build/ppa/`
+and prints the `dput` line; pass `--upload` to send them. Uploads are public
+and version numbers can never be reused, so the script will not upload unless
+asked. Users then get:
+
+```bash
+sudo add-apt-repository ppa:prdpspkt/xlit && sudo apt install xlit-ibus
+```
+
+`debian/` drives the same `make install-*` targets as everything else here.
+Two things it has to do that a local build does not: build offline, since
+Launchpad builders have no network — hence `cargo vendor` into the source
+package and a source replacement written into `CARGO_HOME` — and version each
+upload as `0.1.1~<series>1`, which sorts before `0.1.1` so one release can
+target several series at once.
+
+## What cannot be bundled
+
+The Rust binaries are already static apart from glibc and libgcc, so
+`xlit-common` is close to version-independent on its own. The frontends are
+not, and no amount of bundling changes that:
+
+- `xlit-fcitx5` is a Fcitx5 *addon*, loaded into the Fcitx5 process and linked
+  against `Fcitx5::Core`. It must match the Fcitx5 on the machine; shipping our
+  own copy would mean shipping a second input method daemon that the desktop
+  never talks to.
+- `xlit-ibus` speaks D-Bus to the session's IBus and is registered by an XML
+  file IBus reads from a system directory. A sandboxed or relocated copy is not
+  visible to the desktop's input framework at all.
+
+This is why there is no Flatpak or AppImage here: an input method is not an
+application the user launches, it is a component the desktop loads. What makes
+one package cover many distribution versions is building against the *oldest*
+glibc still supported — which is what the per-series PPA builds do, each
+against its own series.
+
 ## Fedora / RHEL / openSUSE
 
 ```bash

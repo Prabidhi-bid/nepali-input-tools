@@ -90,6 +90,12 @@ install-common:
 	# for a hand build and wrong for a package.
 	sed -i 's|ExecStart=.*|ExecStart=$(BINDIR)/xlit-daemon|' \
 	    $(DESTDIR)$(SYSTEMD_USER_DIR)/xlit-daemon.service
+	# Started at login for every user, by the symlink `systemctl --user enable`
+	# would make. A package cannot run that for users who are not logged in,
+	# and a frontend that finds no daemon has no candidates to show.
+	$(INSTALL) -d $(DESTDIR)$(SYSTEMD_USER_DIR)/default.target.wants
+	ln -sf ../xlit-daemon.service \
+	    $(DESTDIR)$(SYSTEMD_USER_DIR)/default.target.wants/xlit-daemon.service
 	$(INSTALL) -Dm644 README.md $(DESTDIR)$(DOCDIR)/README.md
 	$(INSTALL) -Dm644 LICENSE-MIT $(DESTDIR)$(DATADIR)/licenses/xlit/LICENSE-MIT
 	$(INSTALL) -Dm644 LICENSE-APACHE $(DESTDIR)$(DATADIR)/licenses/xlit/LICENSE-APACHE
@@ -103,6 +109,20 @@ install-ibus:
 	# known until here — DESTDIR is a staging directory and must not appear.
 	sed -i 's|<exec>.*</exec>|<exec>$(LIBEXECDIR)/ibus-engine-xlit --ibus</exec>|' \
 	    $(DESTDIR)$(DATADIR)/ibus/component/xlit.xml
+	# GNOME shows no input switcher until a second source is added, so an
+	# install that stops here looks like an install that did nothing. This
+	# adds the source once, at the user's next login — see the script.
+	$(INSTALL) -Dm755 frontends/linux-ibus/dist/xlit-ibus-register.sh \
+	    $(DESTDIR)$(LIBEXECDIR)/xlit-ibus-register
+	$(INSTALL) -Dm644 frontends/linux-ibus/dist/xlit-ibus-register.service \
+	    $(DESTDIR)$(SYSTEMD_USER_DIR)/xlit-ibus-register.service
+	sed -i 's|ExecStart=.*|ExecStart=$(LIBEXECDIR)/xlit-ibus-register|' \
+	    $(DESTDIR)$(SYSTEMD_USER_DIR)/xlit-ibus-register.service
+	# Enabled for every user by the symlink `systemctl --user enable` would
+	# make, which a package cannot run on behalf of users who are not logged in.
+	$(INSTALL) -d $(DESTDIR)$(SYSTEMD_USER_DIR)/default.target.wants
+	ln -sf ../xlit-ibus-register.service \
+	    $(DESTDIR)$(SYSTEMD_USER_DIR)/default.target.wants/xlit-ibus-register.service
 
 # Fcitx5: cmake knows where its own pieces go.
 install-fcitx5:
@@ -111,8 +131,12 @@ install-fcitx5:
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/xlit $(DESTDIR)$(BINDIR)/xlit-daemon
 	rm -f $(DESTDIR)$(SYSTEMD_USER_DIR)/xlit-daemon.service
+	rm -f $(DESTDIR)$(SYSTEMD_USER_DIR)/default.target.wants/xlit-daemon.service
 	rm -f $(DESTDIR)$(LIBEXECDIR)/ibus-engine-xlit
 	rm -f $(DESTDIR)$(DATADIR)/ibus/component/xlit.xml
+	rm -f $(DESTDIR)$(LIBEXECDIR)/xlit-ibus-register
+	rm -f $(DESTDIR)$(SYSTEMD_USER_DIR)/xlit-ibus-register.service
+	rm -f $(DESTDIR)$(SYSTEMD_USER_DIR)/default.target.wants/xlit-ibus-register.service
 	rm -f $(DESTDIR)$(FCITX5_LIBDIR)/fcitx5/xlit.so
 	rm -f $(DESTDIR)$(FCITX5_DATADIR)/addon/xlit.conf
 	rm -f $(DESTDIR)$(FCITX5_DATADIR)/inputmethod/xlit.conf

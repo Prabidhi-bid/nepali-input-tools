@@ -1,0 +1,55 @@
+#!/usr/bin/make -f
+#
+# The PPA build. Everything about *where files go* still lives in the
+# top-level Makefile — this file only stages `make install-*` into one
+# directory per binary package, exactly as packaging/deb/build.sh does.
+
+include /usr/share/dpkg/architecture.mk
+
+# Launchpad builders have no network, so cargo must build from the `vendor/`
+# directory that packaging/ppa/build.sh puts in the source package. The source
+# replacement goes in CARGO_HOME rather than the tree's own .cargo/config.toml,
+# which has Windows link flags in it and no business being rewritten here.
+export CARGO_HOME = $(CURDIR)/debian/cargo
+export CARGO_NET_OFFLINE = true
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	mkdir -p $(CARGO_HOME)
+	printf '%s\n' \
+	    '[source.crates-io]' \
+	    'replace-with = "vendored-sources"' \
+	    '[source.vendored-sources]' \
+	    'directory = "$(CURDIR)/vendor"' \
+	    > $(CARGO_HOME)/config.toml
+
+override_dh_auto_build:
+	$(MAKE) build
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	$(MAKE) check
+endif
+
+# One `make install-*` per binary package, straight into its own staging
+# directory: no debian/tmp, no .install files to drift out of step with the
+# Makefile.
+override_dh_auto_install:
+	$(MAKE) install-common DESTDIR=$(CURDIR)/debian/xlit-common PREFIX=/usr
+	$(MAKE) install-ibus   DESTDIR=$(CURDIR)/debian/xlit-ibus   PREFIX=/usr
+	$(MAKE) install-fcitx5 DESTDIR=$(CURDIR)/debian/xlit-fcitx5 PREFIX=/usr
+	# Debian keeps licences in /usr/share/doc/<pkg>/copyright — dh_installdocs
+	# puts debian/copyright there — not in the /usr/share/licenses the
+	# Makefile uses for every other distribution.
+	rm -rf $(CURDIR)/debian/xlit-common/usr/share/licenses
+
+# The Fcitx5 addon links the Rust cdylib installed beside it, which is private
+# to this package and so has no shlibs entry for dpkg-shlibdeps to find.
+override_dh_shlibdeps:
+	dh_shlibdeps -l/usr/lib/$(DEB_HOST_MULTIARCH)/fcitx5 -- --ignore-missing-info
+
+override_dh_auto_clean:
+	$(MAKE) clean || true
+	rm -rf $(CARGO_HOME)

@@ -16,7 +16,7 @@ Release:        1%{?dist}
 Summary:        Nepali transliteration input method
 
 License:        MIT OR Apache-2.0
-URL:            https://github.com/prdpspkt/nepali-input-tools
+URL:            https://github.com/Prabidhi-bid/nepali-input-tools
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  cargo
