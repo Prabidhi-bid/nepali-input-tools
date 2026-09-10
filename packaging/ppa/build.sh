@@ -1,9 +1,9 @@
 #!/bin/sh
 # Build signed source packages for a Launchpad PPA, one per Ubuntu series.
 #
-#   packaging/ppa/build.sh ppa:prdpspkt/xlit               current series only
-#   packaging/ppa/build.sh ppa:prdpspkt/xlit noble plucky resolute
-#   packaging/ppa/build.sh --upload ppa:prdpspkt/xlit noble
+#   packaging/ppa/build.sh ppa:prdpspkt/pb-input               current series only
+#   packaging/ppa/build.sh ppa:prdpspkt/pb-input noble plucky resolute
+#   packaging/ppa/build.sh --upload ppa:prdpspkt/pb-input noble
 #
 # It builds; it does not upload unless asked. An upload to a PPA is public and
 # a version number can never be reused, so the last step is yours.
@@ -14,6 +14,12 @@
 # problems are the same problem — the packages need to come from a repository —
 # and Launchpad signs the archive with the key the user adds when they add the
 # PPA.
+#
+# A rejected upload still spends its version number — Launchpad will not take
+# the same one twice, whatever happened to it — so PPA_REVISION bumps the digit
+# after the series name when an upload has to be made again.
+#
+#   PPA_REVISION=2 packaging/ppa/build.sh ppa:prdpspkt/pb-input noble
 #
 # Needs: devscripts dput debhelper cargo (apt install devscripts dput debhelper)
 set -eu
@@ -38,6 +44,8 @@ else
     series=$(lsb_release -cs)
 fi
 
+revision=${PPA_REVISION:-1}
+
 for tool in debuild dpkg-source cargo; do
     command -v "$tool" >/dev/null || { echo "$tool not found (apt install devscripts dput debhelper cargo)"; exit 1; }
 done
@@ -51,7 +59,7 @@ mkdir -p "$out"
 for s in $series; do
     # `~` sorts *before* the plain version, so the same upstream release can go
     # to several series at once and each stays distinguishable and upgradeable.
-    ver="$version~${s}1"
+    ver="$version~${s}${revision}"
     dir="$out/pb-input-$ver"
 
     # Build from what is committed, not from the working tree: a stray target/

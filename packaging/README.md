@@ -88,8 +88,13 @@ sudo apt install devscripts dput debhelper cargo
 ```
 
 ```bash
-packaging/ppa/build.sh ppa:prdpspkt/xlit noble plucky resolute
+packaging/ppa/build.sh ppa:prdpspkt/pb-input noble plucky resolute
 ```
+
+A rejected upload spends its version number as surely as an accepted one —
+Launchpad will not take the same version twice, whatever became of it — so a
+second attempt needs `PPA_REVISION=2`, which bumps the digit after the series
+name.
 
 That builds one signed *source* package per series into `packaging/build/ppa/`
 and prints the `dput` line; pass `--upload` to send them. Uploads are public
@@ -97,7 +102,7 @@ and version numbers can never be reused, so the script will not upload unless
 asked. Users then get:
 
 ```bash
-sudo add-apt-repository ppa:prdpspkt/xlit && sudo apt install pb-input
+sudo add-apt-repository ppa:prdpspkt/pb-input && sudo apt install pb-input
 ```
 
 `debian/` drives the same `make install-*` targets as everything else here.

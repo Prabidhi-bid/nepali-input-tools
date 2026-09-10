@@ -48,26 +48,32 @@ even when it cannot know the spelling.
       was 263) — `tools/mkseed.py`
 - [ ] Wider vocabulary still: words outside the database fall back to the
       literal reading
-- [x] Linux packages — `.deb` built and checked; RPM spec and PKGBUILD written
-      against the same Makefile ([packaging/](packaging/README.md))
+- [x] Linux packages — published to a PPA as `pb-input` for noble, plucky and
+      resolute; RPM spec and PKGBUILD written against the same Makefile
+      ([packaging/](packaging/README.md))
 - [ ] Language packs (a second language beyond Nepali)
 
 See [docs/architecture.md](docs/architecture.md) for the full plan and milestones.
 
-## Install (Linux)
+## Install (Ubuntu)
 
 ```bash
-packaging/deb/build.sh && sudo apt install ./packaging/build/*.deb
+sudo add-apt-repository ppa:prdpspkt/pb-input && sudo apt install pb-input
 ```
+
+Built for 24.04 noble, 25.04 plucky and 26.04 resolute. `pb-input` pulls in the
+engine and the IBus frontend that GNOME and most desktops use; on KDE, install
+`pb-input-fcitx5` as well.
+
+Log out and back in, and *Nepali (transliteration)* is in your input sources —
+**Super+Space** switches to it. The package adds it once, at your next login,
+and leaves it alone afterwards if you remove it. To skip the logout:
 
 ```bash
-ibus restart; sleep 3; ibus engine xlit-ne
+systemctl --user start xlit-ibus-register && ibus restart
 ```
 
-Give IBus that moment to come back up — chaining the two with `&&` connects
-before the daemon is listening and fails. On GNOME, also add *Nepali
-(transliteration)* in Settings → Keyboard → Input Sources, because the desktop
-owns the source list; **Super+Space** then switches. Fedora, Arch and a plain
+Building the packages yourself, other distributions, and a plain
 `sudo make install` are covered in [packaging/README.md](packaging/README.md).
 
 ## Build & run
