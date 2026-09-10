@@ -49,6 +49,19 @@ fi
 rm -rf "$out"
 mkdir -p "$out"
 
+# The packages are named after the product, pb-input; the binaries and the
+# IBus engine id are still xlit, because an engine id is written into every
+# user's GNOME input-source list and renaming it would silently drop the
+# keyboard they configured. Replaces/Breaks let apt take over from the
+# xlit-named packages that shipped before the rename.
+old_name() {
+    case "$1" in
+        pb-input-common) echo xlit-common ;;
+        pb-input-ibus)   echo xlit-ibus ;;
+        pb-input-fcitx5) echo xlit-fcitx5 ;;
+    esac
+}
+
 # stage <package> <make-target> <depends> <description...>
 stage() {
     pkg=$1; target=$2; depends=$3; shift 3
@@ -66,6 +79,7 @@ stage() {
     cp "$root/packaging/deb/copyright" "$stagedir/usr/share/doc/$pkg/copyright"
 
     installed=$(du -ks "$stagedir" | cut -f1)
+    old=$(old_name "$pkg")
     cat > "$stagedir/DEBIAN/control" <<CONTROL
 Package: $pkg
 Version: $version
@@ -73,6 +87,9 @@ Section: utils
 Priority: optional
 Architecture: $arch
 Depends: $depends
+Provides: $old
+Replaces: $old
+Breaks: $old
 Maintainer: $maintainer
 Installed-Size: $installed
 Description: $*
@@ -93,14 +110,14 @@ CONTROL
 echo "==> packages"
 # Rust binaries against glibc: libc and libgcc, nothing else. Listed by hand
 # rather than by dpkg-shlibdeps so that this script needs only dpkg-deb.
-stage xlit-common install-common 'libc6 (>= 2.34), libgcc-s1' \
+stage pb-input-common install-common 'libc6 (>= 2.34), libgcc-s1' \
     "Nepali transliteration engine
  Type Nepali phonetically in Latin letters and get Devanagari: namaste
  becomes नमस्ते. This package holds the shared pieces — the xlit command
  line tool and xlit-daemon, which serves candidates to the input method
- frontends. Install xlit-ibus or xlit-fcitx5 to type with it."
+ frontends. Install pb-input to type with it."
 
-stage xlit-ibus install-ibus "xlit-common (= $version), ibus" \
+stage pb-input-ibus install-ibus "pb-input-common (= $version), ibus" \
     "Nepali transliteration input method for IBus
  An IBus engine for Nepali phonetic input: type namaste, get नमस्ते, with
  a candidate list for the spellings the sounds leave open. IBus is the
@@ -110,13 +127,38 @@ stage xlit-ibus install-ibus "xlit-common (= $version), ibus" \
 # ask it rather than keeping a second, differently-wrong probe here.
 if [ "$( cd "$root" && make -s print-HAVE_FCITX5 )" = yes ]; then
     ( cd "$root" && make build-fcitx5 >/dev/null )
-    stage xlit-fcitx5 install-fcitx5 "xlit-common (= $version), fcitx5" \
+    stage pb-input-fcitx5 install-fcitx5 "pb-input-common (= $version), fcitx5" \
         "Nepali transliteration input method for Fcitx5
  A Fcitx5 addon for Nepali phonetic input: type namaste, get नमस्ते. Fcitx5
  is the input framework KDE Plasma uses by default."
 else
-    echo "  (skipping xlit-fcitx5: Fcitx5 development files not installed)"
+    echo "  (skipping pb-input-fcitx5: Fcitx5 development files not installed)"
 fi
+
+# The name people are told to install. It owns no files: what it does is spare
+# them from knowing that the engine and the frontend are packaged separately,
+# and from picking the wrong one of the two frontends.
+meta="$out/pb-input"
+rm -rf "$meta"; mkdir -p "$meta/DEBIAN" "$meta/usr/share/doc/pb-input"
+cp "$root/packaging/deb/copyright" "$meta/usr/share/doc/pb-input/copyright"
+cat > "$meta/DEBIAN/control" <<CONTROL
+Package: pb-input
+Version: $version
+Section: utils
+Priority: optional
+Architecture: all
+Depends: pb-input-common (= $version), pb-input-ibus (= $version)
+Maintainer: $maintainer
+Description: Nepali phonetic input method
+ Type Nepali in Latin letters and get Devanagari: namaste becomes नमस्ते.
+ Installing this gets you the engine and the IBus frontend GNOME and most
+ desktops use; the Nepali input source appears in your keyboard settings at
+ the next login. On KDE, install pb-input-fcitx5 instead.
+CONTROL
+dpkg-deb --build --root-owner-group "$meta" "$out/pb-input_${version}_all.deb" >/dev/null
+rm -rf "$meta"
+[ -z "$sign_key" ] || debsigs --sign=origin --default-key="$sign_key" "$out/pb-input_${version}_all.deb"
+echo "  $out/pb-input_${version}_all.deb"
 
 echo
 echo "install with: sudo apt install $out/*.deb"

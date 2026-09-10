@@ -37,13 +37,13 @@ endif
 # directory: no debian/tmp, no .install files to drift out of step with the
 # Makefile.
 override_dh_auto_install:
-	$(MAKE) install-common DESTDIR=$(CURDIR)/debian/xlit-common PREFIX=/usr
-	$(MAKE) install-ibus   DESTDIR=$(CURDIR)/debian/xlit-ibus   PREFIX=/usr
-	$(MAKE) install-fcitx5 DESTDIR=$(CURDIR)/debian/xlit-fcitx5 PREFIX=/usr
+	$(MAKE) install-common DESTDIR=$(CURDIR)/debian/pb-input-common PREFIX=/usr
+	$(MAKE) install-ibus   DESTDIR=$(CURDIR)/debian/pb-input-ibus   PREFIX=/usr
+	$(MAKE) install-fcitx5 DESTDIR=$(CURDIR)/debian/pb-input-fcitx5 PREFIX=/usr
 	# Debian keeps licences in /usr/share/doc/<pkg>/copyright — dh_installdocs
 	# puts debian/copyright there — not in the /usr/share/licenses the
 	# Makefile uses for every other distribution.
-	rm -rf $(CURDIR)/debian/xlit-common/usr/share/licenses
+	rm -rf $(CURDIR)/debian/pb-input-common/usr/share/licenses
 
 # The Fcitx5 addon links the Rust cdylib installed beside it, which is private
 # to this package and so has no shlibs entry for dpkg-shlibdeps to find.

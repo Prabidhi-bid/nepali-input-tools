@@ -52,7 +52,7 @@ for s in $series; do
     # `~` sorts *before* the plain version, so the same upstream release can go
     # to several series at once and each stays distinguishable and upgradeable.
     ver="$version~${s}1"
-    dir="$out/xlit-$ver"
+    dir="$out/pb-input-$ver"
 
     # Build from what is committed, not from the working tree: a stray target/
     # or a half-edited file must not end up in a published source package.
@@ -64,13 +64,13 @@ for s in $series; do
     ( cd "$dir" && cargo vendor --locked --versioned-dirs vendor >/dev/null )
 
     # Retarget the top changelog entry at this series.
-    sed -i "1s/^xlit (.*) .*; urgency=/xlit ($ver) $s; urgency=/" "$dir/debian/changelog"
+    sed -i "1s/^pb-input (.*) .*; urgency=/pb-input ($ver) $s; urgency=/" "$dir/debian/changelog"
 
     ( cd "$dir" && debuild -S -sa -d )
-    echo "  $out/xlit_${ver}_source.changes"
+    echo "  $out/pb-input_${ver}_source.changes"
 
     if [ "$upload" = yes ]; then
-        dput "$ppa" "$out/xlit_${ver}_source.changes"
+        dput "$ppa" "$out/pb-input_${ver}_source.changes"
     fi
 done
 
@@ -78,7 +78,7 @@ echo
 if [ "$upload" = yes ]; then
     echo "uploaded to $ppa — Launchpad emails you when the builds finish"
 else
-    echo "upload with: dput $ppa $out/xlit_*_source.changes"
+    echo "upload with: dput $ppa $out/pb-input_*_source.changes"
 fi
 echo "then, on any machine:"
-echo "  sudo add-apt-repository $ppa && sudo apt install xlit-ibus"
+echo "  sudo add-apt-repository $ppa && sudo apt install pb-input"

@@ -12,12 +12,23 @@ nobody running GNOME should have to install Fcitx5 to type Nepali:
 
 | Package | Contents | Depends on |
 |---------|----------|-----------|
-| `xlit` / `xlit-common` | `xlit`, `xlit-daemon`, the systemd user unit, docs | libc |
-| `xlit-ibus` | `ibus-engine-xlit` + the IBus component XML | the above, `ibus` |
-| `xlit-fcitx5` | `xlit.so` addon + its two `.conf` files | the above, `fcitx5` |
+| `pb-input` | nothing — the name people install | the two below |
+| `xlit` / `pb-input-common` | `xlit`, `xlit-daemon`, the systemd user unit, docs | libc |
+| `pb-input-ibus` | `ibus-engine-xlit` + the IBus component XML | the above, `ibus` |
+| `pb-input-fcitx5` | `xlit.so` addon + its two `.conf` files | the above, `fcitx5` |
 
-The base package is called `xlit-common` on Debian and `xlit` on Fedora and
-Arch, following each distribution's habit.
+On Debian and Ubuntu the packages are named after the product, `pb-input`, so
+that `apt install pb-input` is the whole instruction; the empty metapackage
+exists to spare people from knowing that the engine and the frontend ship
+separately, or from picking the wrong one of two frontends. Fedora and Arch
+still call the base package `xlit`.
+
+What is *not* renamed: the binaries (`xlit`, `xlit-daemon`) and the IBus engine
+id (`xlit-ne`). The engine id is written into every user's GNOME input-source
+list, and GNOME silently drops a source whose engine no longer exists — a
+rename there would take away the keyboard people configured, with no error to
+explain it. `Provides`/`Replaces`/`Breaks` on the old `xlit-*` package names
+let apt take over from an install that predates the rename.
 
 ## Debian / Ubuntu
 
@@ -68,8 +79,8 @@ install above remains the answer for everyone else.
 ## Ubuntu PPA
 
 The answer to both problems a loose `.deb` has: no publisher the desktop
-installer recognises, and `apt install ./xlit-ibus.deb` failing on
-`Depends: xlit-common` because that name exists in no archive. A repository
+installer recognises, and `apt install ./pb-input-ibus.deb` failing on
+`Depends: pb-input-common` because that name exists in no archive. A repository
 fixes both — Launchpad signs it, and apt resolves the dependency from it.
 
 ```bash
@@ -86,7 +97,7 @@ and version numbers can never be reused, so the script will not upload unless
 asked. Users then get:
 
 ```bash
-sudo add-apt-repository ppa:prdpspkt/xlit && sudo apt install xlit-ibus
+sudo add-apt-repository ppa:prdpspkt/xlit && sudo apt install pb-input
 ```
 
 `debian/` drives the same `make install-*` targets as everything else here.
